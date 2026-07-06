@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>asciiPortal3D</title>
+<link rel="stylesheet" href="css/styles.css" />
+
+<!-- No build step: Three.js is loaded as an ES module via import map. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="ascii"></canvas>
+
+  <div id="hud"></div>
+
+  <div id="overlay">
+    <div class="panel">
+      <h1>ASCII&nbsp;PORTAL&nbsp;3D</h1>
+      <p class="tag">a real 3D room, rendered as ASCII</p>
+      <p class="go">click to enter</p>
+      <p class="keys">WASD move · mouse look · space jump · Esc release</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
