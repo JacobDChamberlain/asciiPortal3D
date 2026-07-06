@@ -170,12 +170,20 @@ are tagged `userData.portalNormal` (axis-aligned, reliable). Crosshair is a DOM
   design (no fall speed built). Real flings need height — will come naturally
   once chambers have drops/ledges.
 
-**The core Portal sandbox is complete and feels right.** Everything from here is
-game/content, not core mechanics. Possible next directions (not yet chosen):
-- A held object (weighted cube) that also travels through portals.
+**Weighted cube DONE and author-approved.** `js/cube.js` (`WeightedCube`):
+world-space physics (gravity, floor/wall collision, friction), `E` grab/drop,
+`T` throw along aim, and portal travel via a new generic
+`PortalSystem.teleportObject` (full-rotation teleport for bodies — the camera
+keeps its own upright first-person `postMove`). Carry it through a portal by
+holding it while you walk through. Six ASCII charsets now (added alphanumeric,
+numbers, letters).
+
+**The core Portal sandbox + cube are complete and feel right.** Everything from
+here is game/content, not core mechanics. Possible next directions (not chosen):
 - Actual test chambers (level geometry beyond one box room) + a goal (button →
   door → exit), i.e., real puzzles with the drops that make flings shine.
 - Recursive portal rendering (portal-in-portal), if desired — ASCII hides most
   of why it's hard.
+- Player<->cube collision / standing on the cube (currently they can overlap).
 - The asciify-style on-screen resolution slider (still in backlog).
 - GLSL ASCII shader if the CPU pass ever bottlenecks.
