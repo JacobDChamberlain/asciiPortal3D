@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { AsciiRenderer } from './asciiRenderer.js';
+import { PortalSystem } from './portals.js';
 
 /* ------------------------------------------------------------------ *
  * DOM
@@ -59,7 +60,6 @@ scene.add(fill);
 const ROOM = 20;          // interior side length
 const WALL_H = 12;
 const HALF = ROOM / 2;
-const MARGIN = 0.8;       // how close the player can get to a wall
 
 function makeRoom() {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.05 });
@@ -126,6 +126,24 @@ makeRoom();
 const props = makeProps();
 
 /* ------------------------------------------------------------------ *
+ * Portals — one fixed blue/orange pair (left wall <-> back wall)
+ * ------------------------------------------------------------------ */
+const portals = new PortalSystem(gameRenderer, scene, HALF);
+portals.addPair(
+  { // BLUE, on the left wall, facing +X into the room
+    center: new THREE.Vector3(-HALF + 0.08, EYE_HEIGHT, -3),
+    normal: new THREE.Vector3(1, 0, 0),
+    halfW: 1.6, halfH: 2.6, color: 0x3fb7ff,
+  },
+  { // ORANGE, on the back wall, facing +Z into the room
+    center: new THREE.Vector3(3, EYE_HEIGHT, -HALF + 0.08),
+    normal: new THREE.Vector3(0, 0, 1),
+    halfW: 1.6, halfH: 2.6, color: 0xff9a3c,
+  }
+);
+portals.setSize(RENDER_W, renderH);
+
+/* ------------------------------------------------------------------ *
  * First-person controls  (pointer lock + WASD + jump)
  * ------------------------------------------------------------------ */
 const controls = new PointerLockControls(camera, document.body);
@@ -177,6 +195,7 @@ function fit() {
   const aspect = window.innerWidth / Math.max(1, window.innerHeight);
   renderH = Math.round(RENDER_W / aspect);
   gameRenderer.setSize(RENDER_W, renderH, false);
+  portals.setSize(RENDER_W, renderH);
   camera.aspect = aspect;
   camera.updateProjectionMatrix();
   // Output width in CSS px: fill the window width, capped for perf.
@@ -230,17 +249,18 @@ function animate(now) {
       canJump = true;
     }
 
-    // keep the player inside the room
-    const lim = HALF - MARGIN;
-    camera.position.x = Math.max(-lim, Math.min(lim, camera.position.x));
-    camera.position.z = Math.max(-lim, Math.min(lim, camera.position.z));
+    // portals: teleport if we crossed a mouth, then clamp to the room (with
+    // gaps left open at each portal so we can actually walk through)
+    portals.postMove(camera, velocity, dt);
+    portals.clampToRoom(camera.position);
   }
 
   // gentle prop motion so the scene is alive even while standing still
   props.cube.rotation.y += dt * 0.6;
   props.sphere.position.y = 1.6 + Math.sin(now * 0.0015) * 0.5;
 
-  // 1) render the real 3D frame to the offscreen canvas
+  // 1) render each portal's through-view into its target, then the real frame
+  portals.update(camera);
   gameRenderer.render(scene, camera);
   // 2) convert that frame to ASCII on the visible canvas
   ascii.render(gameCanvas, gameCanvas.width, gameCanvas.height);

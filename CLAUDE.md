@@ -132,5 +132,19 @@ from asciify). Three.js via CDN import map, no build step. Serve statically
 - GLSL ASCII shader if the CPU pass ever bottlenecks (color mode is the slow
   path).
 
-**Next up: step 3 — the first working portal** (Tier 1 render-through + Tier 2
-teleport).
+**Step 3 IMPLEMENTED, awaiting playtest.** One fixed blue/orange portal pair
+(`js/portals.js`, `PortalSystem`): blue on the left wall, orange on the back
+wall (perpendicular, so teleporting turns a corner through space).
+- Render-through: virtual camera at `T = M_dest · flip180 · M_src⁻¹ · mainCam`,
+  scene rendered to each portal's WebGLRenderTarget, sampled in screen space on
+  the portal quad (ShaderMaterial). A global clipping plane at the destination
+  discards geometry behind that wall.
+- Teleport: `postMove()` detects the camera crossing a mouth inside the opening
+  and applies the same `T` to position, orientation (quaternion premultiply),
+  and velocity. 0.25s cooldown; exit nudged clear of the destination.
+- `clampToRoom()` keeps the player in the room but leaves gaps at portal
+  openings so they can walk through the plane.
+- Non-recursive (both groups hidden during target renders) — ASCII hides seams.
+
+Gun placement is deliberately deferred: fixed portals first to prove
+render+teleport, gun (raycast onto walls) built on top afterward.
