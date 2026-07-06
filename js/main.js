@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { AsciiRenderer } from './asciiRenderer.js';
 import { PortalSystem } from './portals.js';
+import { WeightedCube } from './cube.js';
 
 /* ------------------------------------------------------------------ *
  * DOM
@@ -111,11 +112,6 @@ function makeRoom() {
 
 // A few props so depth + parallax read clearly when you move and look around.
 function makeProps() {
-  const cubeMat = new THREE.MeshStandardMaterial({ color: 0xd8b45a, roughness: 0.5, metalness: 0.3 });
-  const cube = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), cubeMat);
-  cube.position.set(-4, 1, -3);
-  scene.add(cube);
-
   const pillarMat = new THREE.MeshStandardMaterial({ color: 0x9aa0aa, roughness: 0.8 });
   for (const [x, z] of [[6, -6], [-6, 5], [5, 5]]) {
     const p = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, WALL_H, 16), pillarMat);
@@ -129,7 +125,7 @@ function makeProps() {
   );
   sphere.position.set(3, 1.3, -5);
   scene.add(sphere);
-  return { cube, sphere };
+  return { sphere };
 }
 
 makeRoom();
@@ -152,6 +148,11 @@ portals.addPair(
   }
 );
 portals.setSize(RENDER_W, renderH);
+
+/* ------------------------------------------------------------------ *
+ * Weighted cube — carry (E), drop (E), throw (T); flings through portals
+ * ------------------------------------------------------------------ */
+const cube = new WeightedCube(scene, portals, HALF, WALL_H, { size: 2, spawn: [-4, 1, -3] });
 
 /* ------------------------------------------------------------------ *
  * First-person controls  (pointer lock + WASD + jump)
@@ -193,6 +194,8 @@ window.addEventListener('keydown', (e) => {
     case 'Space': if (canJump) { velocity.y = JUMP_SPEED; canJump = false; } break;
     case 'KeyQ': fireGun(0); break;   // blue portal at the crosshair
     case 'KeyF': fireGun(1); break;   // orange portal at the crosshair
+    case 'KeyE': cube.toggleGrab(camera); break;  // grab / drop the cube
+    case 'KeyT': cube.throw(camera); break;       // throw the cube
     case 'BracketLeft':  ascii.setColumns(Math.max(60, ascii.columns - 20)); updateHud(); break;
     case 'BracketRight': ascii.setColumns(Math.min(320, ascii.columns + 20)); updateHud(); break;
     case 'KeyC': ascii.setColor(!ascii.color); updateHud(); break;
@@ -256,7 +259,7 @@ function updateHud() {
   hud.innerHTML =
     `cols <b>${ascii.columns}</b> &nbsp; ramp <b>${RAMPS[rampIdx]}</b> &nbsp; ` +
     `mode <b>${ascii.color ? 'color' : 'mono'}</b><br>` +
-    `<span class="dim">WASD move · mouse look · space jump · click/Q blue · shift-click/F orange · [ ] res · V charset · C color</span>`;
+    `<span class="dim">WASD move · mouse look · space jump · click/Q blue · shift-click/F orange · E grab/drop · T throw · [ ] res · V charset · C color</span>`;
 }
 updateHud();
 
@@ -314,10 +317,12 @@ function animate(now) {
 
     // safety net: if we somehow fall out of the world, respawn
     if (camera.position.y < -40 || camera.position.y > WALL_H + 60) respawn();
+
+    // the weighted cube: physics, carry/throw, and its own portal travel
+    cube.update(dt, camera);
   }
 
   // gentle prop motion so the scene is alive even while standing still
-  props.cube.rotation.y += dt * 0.6;
   props.sphere.position.y = 1.6 + Math.sin(now * 0.0015) * 0.5;
 
   // 1) render each portal's through-view into its target, then the real frame

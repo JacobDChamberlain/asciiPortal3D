@@ -313,6 +313,44 @@ export class PortalSystem {
     this.prev.copy(now);
   }
 
+  // Generic body teleport (e.g. the weighted cube). `body` needs: position,
+  // velocity (both Vector3), optional quaternion, halfHeight (probe offset for
+  // floor/ceiling), clearance (exit nudge), and mutable _prev / _cool fields.
+  // Returns true if it teleported this call.
+  teleportObject(body, dt) {
+    if (body._cool > 0) body._cool -= dt;
+    const now = body.position;
+    if (!body._prev) { body._prev = now.clone(); return false; }
+    let didTp = false;
+
+    if (body._cool <= 0) {
+      for (const p of this.portals) {
+        const drop = (Math.abs(p.normal.y) > 0.5) ? body.halfHeight : 0;
+        _probe.set(now.x, now.y - drop, now.z);
+        _probePrev.set(body._prev.x, body._prev.y - drop, body._prev.z);
+        const dPrev = _probePrev.sub(p.center).dot(p.normal);
+        const dNow = _rel.copy(_probe).sub(p.center).dot(p.normal);
+
+        const horizontal = Math.abs(p.normal.y) > 0.5;
+        const crossed = horizontal
+          ? (dNow <= 0.05 && body.velocity.dot(p.normal) < -0.01)
+          : (dPrev > 0 && dNow <= 0);
+
+        if (crossed && this._inOpening(p, _probe, 0)) {
+          now.applyMatrix4(p.T);
+          now.addScaledVector(p.dest.normal, body.clearance ?? 0.3);
+          body.velocity.applyQuaternion(p.quatT);
+          if (body.quaternion) body.quaternion.premultiply(p.quatT);
+          body._cool = 0.08;
+          didTp = true;
+          break;
+        }
+      }
+    }
+    body._prev.copy(now);
+    return didTp;
+  }
+
   // Clamp the player to the room, but leave a gap at each portal opening so
   // they can actually walk through the plane (where postMove teleports them).
   clampToRoom(pos) {
