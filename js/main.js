@@ -72,11 +72,15 @@ function makeRoom() {
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, ROOM), floorMat);
   floor.rotation.x = -Math.PI / 2;
+  floor.userData.portalNormal = new THREE.Vector3(0, 1, 0);
+  portalableSurfaces.push(floor);
   scene.add(floor);
 
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, ROOM), ceilMat);
   ceil.rotation.x = Math.PI / 2;
   ceil.position.y = WALL_H;
+  ceil.userData.portalNormal = new THREE.Vector3(0, -1, 0);
+  portalableSurfaces.push(ceil);
   scene.add(ceil);
 
   const wallGeo = new THREE.PlaneGeometry(ROOM, WALL_H);
@@ -134,7 +138,7 @@ const props = makeProps();
 /* ------------------------------------------------------------------ *
  * Portals — one fixed blue/orange pair (left wall <-> back wall)
  * ------------------------------------------------------------------ */
-const portals = new PortalSystem(gameRenderer, scene, HALF, WALL_H);
+const portals = new PortalSystem(gameRenderer, scene, HALF, WALL_H, EYE_HEIGHT);
 portals.addPair(
   { // BLUE, on the left wall, facing +X into the room
     center: new THREE.Vector3(-HALF + 0.08, EYE_HEIGHT, -3),
@@ -160,13 +164,25 @@ controls.addEventListener('unlock', () => { overlay.classList.remove('hidden'); 
 
 const keys = { forward: false, back: false, left: false, right: false };
 let canJump = false;
-const velocity = new THREE.Vector3();
-const direction = new THREE.Vector3();
+let onGround = false;
+const velocity = new THREE.Vector3();     // WORLD-space: walking, gravity, flings
+const _fwd = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _wish = new THREE.Vector3();
 
-const MOVE_ACCEL = 90;
-const DAMPING = 9;
+const MOVE_SPD = 12;        // ground run speed
+const GROUND_CONTROL = 12;  // how quickly ground velocity eases toward input
+const AIR_ACCEL = 14;       // gentle steering while airborne (momentum preserved)
 const GRAVITY = 32;
-const JUMP_SPEED = 11;
+const JUMP_SPEED = 12;
+const MAX_FALL = 55;        // terminal fall speed (keeps portal loops stable)
+
+const SPAWN = new THREE.Vector3(0, EYE_HEIGHT, 8);
+function respawn() {
+  camera.position.copy(SPAWN);
+  velocity.set(0, 0, 0);
+  portals.prev = null;   // reset the crossing tracker so we don't insta-teleport
+}
 
 window.addEventListener('keydown', (e) => {
   switch (e.code) {
@@ -255,26 +271,39 @@ function animate(now) {
   last = now;
 
   if (controls.isLocked) {
-    // horizontal movement with damping (classic pointer-lock pattern)
-    velocity.x -= velocity.x * DAMPING * dt;
-    velocity.z -= velocity.z * DAMPING * dt;
+    // horizontal input direction in WORLD space (from where the camera faces)
+    _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion); _fwd.y = 0; _fwd.normalize();
+    _right.set(1, 0, 0).applyQuaternion(camera.quaternion); _right.y = 0; _right.normalize();
+    _wish.set(0, 0, 0);
+    if (keys.forward) _wish.add(_fwd);
+    if (keys.back) _wish.sub(_fwd);
+    if (keys.right) _wish.add(_right);
+    if (keys.left) _wish.sub(_right);
+    if (_wish.lengthSq() > 0) _wish.normalize();
 
-    direction.z = Number(keys.forward) - Number(keys.back);
-    direction.x = Number(keys.right) - Number(keys.left);
-    direction.normalize();
+    if (onGround) {
+      // responsive ground control: ease horizontal velocity toward the target
+      const t = 1 - Math.exp(-GROUND_CONTROL * dt);
+      velocity.x += (_wish.x * MOVE_SPD - velocity.x) * t;
+      velocity.z += (_wish.z * MOVE_SPD - velocity.z) * t;
+    } else {
+      // airborne: preserve momentum (the fling), allow only gentle steering
+      velocity.x += _wish.x * AIR_ACCEL * dt;
+      velocity.z += _wish.z * AIR_ACCEL * dt;
+    }
 
-    if (keys.forward || keys.back) velocity.z -= direction.z * MOVE_ACCEL * dt;
-    if (keys.left || keys.right) velocity.x -= direction.x * MOVE_ACCEL * dt;
-
-    controls.moveRight(-velocity.x * dt);
-    controls.moveForward(-velocity.z * dt);
-
-    // gravity + floor
     velocity.y -= GRAVITY * dt;
-    camera.position.y += velocity.y * dt;
-    if (camera.position.y < EYE_HEIGHT) {
+    if (velocity.y < -MAX_FALL) velocity.y = -MAX_FALL;
+
+    camera.position.addScaledVector(velocity, dt);
+
+    // the floor catches you at eye height UNLESS you're over a floor-portal
+    // opening, in which case you drop through (and get teleported)
+    onGround = false;
+    if (camera.position.y < EYE_HEIGHT && !portals.overFloorOpening(camera.position)) {
       camera.position.y = EYE_HEIGHT;
       velocity.y = 0;
+      onGround = true;
       canJump = true;
     }
 
@@ -282,6 +311,9 @@ function animate(now) {
     // gaps left open at each portal so we can actually walk through)
     portals.postMove(camera, velocity, dt);
     portals.clampToRoom(camera.position);
+
+    // safety net: if we somehow fall out of the world, respawn
+    if (camera.position.y < -40 || camera.position.y > WALL_H + 60) respawn();
   }
 
   // gentle prop motion so the scene is alive even while standing still

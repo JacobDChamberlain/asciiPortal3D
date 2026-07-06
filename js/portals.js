@@ -142,12 +142,22 @@ class Portal {
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+// shared temporaries (avoid per-frame allocation)
+const _rel = new THREE.Vector3();
+const _probe = new THREE.Vector3();
+const _probePrev = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _lookM = new THREE.Matrix4();
+const _ZERO = new THREE.Vector3(0, 0, 0);
+const _WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 export class PortalSystem {
-  constructor(renderer, scene, roomHalf, wallHeight) {
+  constructor(renderer, scene, roomHalf, wallHeight, eyeHeight) {
     this.renderer = renderer;
     this.scene = scene;
     this.roomHalf = roomHalf;
     this.wallHeight = wallHeight;
+    this.eyeHeight = eyeHeight;
     this.portals = [];
 
     this.vcam = new THREE.PerspectiveCamera();
@@ -187,16 +197,38 @@ export class PortalSystem {
     const R = this.roomHalf;
     const hw = p.halfW + 0.3, hh = p.halfH + 0.3;
     const c = hitPoint.clone();
-    if (Math.abs(normal.x) > 0.5) {           // left / right wall
+    if (Math.abs(normal.y) > 0.5) {            // floor / ceiling
+      c.y = normal.y > 0 ? 0 : this.wallHeight;
+      const r = Math.max(hw, hh);             // in-plane orientation is free; keep clear
+      c.x = clamp(c.x, -R + r, R - r);
+      c.z = clamp(c.z, -R + r, R - r);
+    } else if (Math.abs(normal.x) > 0.5) {     // left / right wall
       c.x = -Math.sign(normal.x) * R;
       c.z = clamp(c.z, -R + hw, R - hw);
+      c.y = clamp(c.y, hh, this.wallHeight - hh);
     } else {                                   // front / back wall
       c.z = -Math.sign(normal.z) * R;
       c.x = clamp(c.x, -R + hw, R - hw);
+      c.y = clamp(c.y, hh, this.wallHeight - hh);
     }
-    c.y = clamp(c.y, hh, this.wallHeight - hh);
     p.setPose(c, normal.clone().normalize());
     this.relink();
+  }
+
+  // Project a world point onto a portal's in-plane axes and test the opening.
+  _inOpening(p, point, pad = 0) {
+    _rel.copy(point).sub(p.center);
+    const along = _rel.dot(p.right), vert = _rel.dot(p.up);
+    return Math.abs(along) <= p.halfW + pad && Math.abs(vert) <= p.halfH + pad;
+  }
+
+  // True if the player is standing over a floor-portal opening (so the floor
+  // collision should let them drop through instead of catching them).
+  overFloorOpening(pos) {
+    for (const p of this.portals) {
+      if (p.normal.y > 0.5 && this._inOpening(p, pos, 0.1)) return true;
+    }
+    return false;
   }
 
   setSize(w, h) {
@@ -243,19 +275,38 @@ export class PortalSystem {
 
     if (this.cooldown <= 0) {
       for (const p of this.portals) {
-        const dPrev = this._tmp.copy(this.prev).sub(p.center).dot(p.normal);
-        const dNow = this._tmp.copy(now).sub(p.center).dot(p.normal);
-        if (dPrev > 0 && dNow <= 0) {
-          const rel = this._tmp.copy(now).sub(p.center);
-          const along = rel.dot(p.right), vert = rel.dot(p.up);
-          if (Math.abs(along) <= p.halfW && Math.abs(vert) <= p.halfH) {
-            now.applyMatrix4(p.T);
-            now.addScaledVector(p.dest.normal, 0.3);   // nudge clear of the exit
-            cam.quaternion.premultiply(p.quatT);
-            velocity.applyQuaternion(p.quatT);
-            this.cooldown = 0.25;
-            break;
-          }
+        // probe with the feet for horizontal (floor/ceiling) portals so you
+        // teleport as you step onto them, not after sinking eye-deep
+        const drop = (Math.abs(p.normal.y) > 0.5) ? this.eyeHeight : 0;
+        _probe.set(now.x, now.y - drop, now.z);
+        _probePrev.set(this.prev.x, this.prev.y - drop, this.prev.z);
+        const dPrev = _probePrev.sub(p.center).dot(p.normal);
+        const dNow = _rel.copy(_probe).sub(p.center).dot(p.normal);
+
+        // Wall portals: cross from the front through the plane. Floor/ceiling
+        // portals are coplanar with the floor, so instead fire when you're
+        // at/through the plane AND moving into it (velocity opposes the normal).
+        const horizontal = Math.abs(p.normal.y) > 0.5;
+        const crossed = horizontal
+          ? (dNow <= 0.05 && velocity.dot(p.normal) < -0.01)
+          : (dPrev > 0 && dNow <= 0);
+
+        if (crossed && this._inOpening(p, _probe, 0)) {
+          // position: map the camera through the portal, then nudge clear
+          now.applyMatrix4(p.T);
+          now.addScaledVector(p.dest.normal, 0.3);
+          // velocity: full transform -> momentum is preserved (the fling)
+          velocity.applyQuaternion(p.quatT);
+          // orientation: transform the look direction, then rebuild it UPRIGHT
+          // (roll-free) so PointerLockControls' yaw/pitch model stays valid
+          _fwd.set(0, 0, -1).applyQuaternion(cam.quaternion).applyQuaternion(p.quatT);
+          _fwd.normalize();
+          _fwd.y = clamp(_fwd.y, -0.98, 0.98);   // avoid straight up/down gimbal
+          _fwd.normalize();
+          _lookM.lookAt(_ZERO, _fwd, _WORLD_UP);
+          cam.quaternion.setFromRotationMatrix(_lookM);
+          this.cooldown = 0.08;
+          break;
         }
       }
     }
@@ -270,19 +321,12 @@ export class PortalSystem {
     const OPEN = this.roomHalf + 1;
     for (const p of this.portals) {
       const n = p.normal;
-      if (Math.abs(n.x) > 0.5) {
-        if (Math.abs(pos.z - p.center.z) <= p.halfW + 0.3 &&
-            Math.abs(pos.y - p.center.y) <= p.halfH + 0.3) {
-          if (n.x > 0) minX = -OPEN; else maxX = OPEN;
-        }
-      } else if (Math.abs(n.z) > 0.5) {
-        if (Math.abs(pos.x - p.center.x) <= p.halfW + 0.3 &&
-            Math.abs(pos.y - p.center.y) <= p.halfH + 0.3) {
-          if (n.z > 0) minZ = -OPEN; else maxZ = OPEN;
-        }
-      }
+      if (Math.abs(n.y) > 0.5) continue;          // floor/ceiling: no wall gap
+      if (!this._inOpening(p, pos, 0.3)) continue;
+      if (Math.abs(n.x) > 0.5) { if (n.x > 0) minX = -OPEN; else maxX = OPEN; }
+      else { if (n.z > 0) minZ = -OPEN; else maxZ = OPEN; }
     }
-    pos.x = Math.max(minX, Math.min(maxX, pos.x));
-    pos.z = Math.max(minZ, Math.min(maxZ, pos.z));
+    pos.x = clamp(pos.x, minX, maxX);
+    pos.z = clamp(pos.z, minZ, maxZ);
   }
 }
