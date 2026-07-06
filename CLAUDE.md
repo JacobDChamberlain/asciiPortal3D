@@ -153,10 +153,29 @@ and relinks. Left-click/`Q` = blue, right-click/shift-click/`F` = orange. Walls
 are tagged `userData.portalNormal` (axis-aligned, reliable). Crosshair is a DOM
 `+`. Portals are now fully dynamic; render-through + teleport follow moves.
 
-**Next up: floor & ceiling portals + the fling.** Currently only the 4 vertical
-walls are portalable (keeps teleport yaw-only, which PointerLockControls handles
-cleanly). Floor/ceiling need fuller orientation handling (pitch/roll through the
-transform) and unlock momentum flinging (fall into a floor portal → launch out a
-wall portal). The teleport already applies the full matrix to velocity +
-orientation via quaternion, so the math is mostly there; the care is in
-PointerLockControls' euler decomposition not getting a roll it can't represent.
+**Ovals + floor/ceiling portals + flings DONE and author-approved.**
+- Portals are ellipse-masked (mouth + rim) in-shader. Oval visual, rectangular
+  walk-through collision (invisible through ASCII).
+- All 6 surfaces portalable (4 walls + floor + ceiling). `place()` handles
+  horizontal surfaces; `postMove` uses a feet probe and a coplanar-aware trigger
+  for floor/ceiling (fire when at/through the plane AND moving into it).
+- Teleport rebuilds an UPRIGHT (roll-free) orientation from the transformed look
+  direction, so floor<->wall transitions don't tilt the view and
+  PointerLockControls stays valid.
+- **Movement is fully world-space** (walking, gravity, flings share one velocity
+  vector) — this is what makes flings preserve forward momentum. Ground control
+  responsive; airborne preserves momentum with gentle steering. Terminal fall
+  speed + 0.08s teleport cooldown keep the floor+ceiling infinite fall stable.
+- Note: on a FLAT floor, walking into a floor portal gives a weak fling by
+  design (no fall speed built). Real flings need height — will come naturally
+  once chambers have drops/ledges.
+
+**The core Portal sandbox is complete and feels right.** Everything from here is
+game/content, not core mechanics. Possible next directions (not yet chosen):
+- A held object (weighted cube) that also travels through portals.
+- Actual test chambers (level geometry beyond one box room) + a goal (button →
+  door → exit), i.e., real puzzles with the drops that make flings shine.
+- Recursive portal rendering (portal-in-portal), if desired — ASCII hides most
+  of why it's hard.
+- The asciify-style on-screen resolution slider (still in backlog).
+- GLSL ASCII shader if the CPU pass ever bottlenecks.
