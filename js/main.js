@@ -208,7 +208,7 @@ window.addEventListener('keyup', (e) => {
   }
 });
 
-const RAMPS = ['standard', 'detailed', 'blocks'];
+const RAMPS = ['standard', 'detailed', 'blocks', 'alphanumeric', 'numbers', 'letters'];
 let rampIdx = 0;
 function cycleRamp() { rampIdx = (rampIdx + 1) % RAMPS.length; ascii.setRamp(RAMPS[rampIdx]); updateHud(); }
 

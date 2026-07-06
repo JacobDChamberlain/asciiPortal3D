@@ -10,6 +10,12 @@ export const CHAR_RAMPS = {
   standard: '@%#*+=-:. ',
   detailed: '$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,"^`\'. ',
   blocks: '█▓▒░ ',
+  // letters + numbers only, roughly ordered by ink coverage
+  alphanumeric: 'MWB8QN0DRHKOAGXEUPSZ253F694CJYTVL71oaescnuvxzrjtfil ',
+  // digits only, dense -> sparse
+  numbers: '8069253471 ',
+  // letters only, dense -> sparse (uppercase heavy, lowercase light)
+  letters: 'MWBQNDRHKOAGXEUPSZFCJYTVLIoaescnuvxzrjtfil ',
 };
 
 const ASPECT_MEASURE_SIZE = 100; // px, used once to measure the monospace glyph ratio
