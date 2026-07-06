@@ -49,16 +49,16 @@ const PORTAL_FRAG = /* glsl */`
   }
 `;
 
+const UNIT_Z = new THREE.Vector3(0, 0, 1);
+
 class Portal {
-  constructor(scene, { center, normal, halfW, halfH, color }) {
+  constructor(scene, { halfW, halfH, color }) {
     this.halfW = halfW;
     this.halfH = halfH;
-    this.center = center.clone();
+    this.center = new THREE.Vector3();
     this.color = new THREE.Color(color);
 
     this.group = new THREE.Group();
-    this.group.position.copy(center);
-    this.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize());
     scene.add(this.group);
 
     // bright frame behind the mouth so the portal reads as a ring
@@ -80,15 +80,26 @@ class Portal {
     this.display.position.z = 0.02;
     this.group.add(this.display);
 
-    // cached world-space frame vectors (portals are static)
-    this.group.updateMatrixWorld(true);
-    this.normal = new THREE.Vector3(0, 0, 1).applyQuaternion(this.group.quaternion);
-    this.right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.group.quaternion);
-    this.up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.group.quaternion);
+    // cached world-space frame vectors (refreshed by setPose)
+    this.normal = new THREE.Vector3(0, 0, 1);
+    this.right = new THREE.Vector3(1, 0, 0);
+    this.up = new THREE.Vector3(0, 1, 0);
 
     this.dest = null;   // set by PortalSystem.link
     this.T = new THREE.Matrix4();     // this -> dest transform
     this.quatT = new THREE.Quaternion();
+  }
+
+  // Place the portal flat on a surface: mouth centered at `center`, facing
+  // along `normal` (its outward direction, into the room).
+  setPose(center, normal) {
+    this.center.copy(center);
+    this.group.position.copy(center).addScaledVector(normal, 0.08); // off the wall
+    this.group.quaternion.setFromUnitVectors(UNIT_Z, normal);
+    this.group.updateMatrixWorld(true);
+    this.normal.copy(normal);
+    this.right.set(1, 0, 0).applyQuaternion(this.group.quaternion);
+    this.up.set(0, 1, 0).applyQuaternion(this.group.quaternion);
   }
 
   link(dest) {
@@ -101,11 +112,14 @@ class Portal {
   }
 }
 
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
 export class PortalSystem {
-  constructor(renderer, scene, roomHalf) {
+  constructor(renderer, scene, roomHalf, wallHeight) {
     this.renderer = renderer;
     this.scene = scene;
     this.roomHalf = roomHalf;
+    this.wallHeight = wallHeight;
     this.portals = [];
 
     this.vcam = new THREE.PerspectiveCamera();
@@ -117,14 +131,44 @@ export class PortalSystem {
     this._tmp = new THREE.Vector3();
   }
 
-  /** Create the blue/orange pair and link them both ways. */
+  /** Create the blue/orange pair, place them, and link both ways. */
   addPair(defA, defB) {
     const a = new Portal(this.scene, defA);
     const b = new Portal(this.scene, defB);
+    a.setPose(defA.center, defA.normal.clone().normalize());
+    b.setPose(defB.center, defB.normal.clone().normalize());
+    this.portals = [a, b];
+    this.relink();
+    return this;
+  }
+
+  relink() {
+    const [a, b] = this.portals;
     a.link(b);
     b.link(a);
-    this.portals = [a, b];
-    return this;
+  }
+
+  /**
+   * Move portal `index` (0 = blue, 1 = orange) onto a vertical wall at a ray
+   * hit. Snaps to the wall plane and clamps the mouth so it fits fully on the
+   * wall, then relinks the pair. `normal` is the wall's inward (into-room) dir.
+   */
+  place(index, hitPoint, normal) {
+    const p = this.portals[index];
+    if (!p) return;
+    const R = this.roomHalf;
+    const hw = p.halfW + 0.3, hh = p.halfH + 0.3;
+    const c = hitPoint.clone();
+    if (Math.abs(normal.x) > 0.5) {           // left / right wall
+      c.x = -Math.sign(normal.x) * R;
+      c.z = clamp(c.z, -R + hw, R - hw);
+    } else {                                   // front / back wall
+      c.z = -Math.sign(normal.z) * R;
+      c.x = clamp(c.x, -R + hw, R - hw);
+    }
+    c.y = clamp(c.y, hh, this.wallHeight - hh);
+    p.setPose(c, normal.clone().normalize());
+    this.relink();
   }
 
   setSize(w, h) {

@@ -27,6 +27,21 @@ html, body {
   background: var(--bg);
 }
 
+/* Aiming crosshair, dead center */
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink);
+  text-shadow: 0 0 6px rgba(120, 255, 176, 0.7);
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0.85;
+}
+
 /* HUD readout, bottom-left */
 #hud {
   position: absolute;

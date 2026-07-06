@@ -61,6 +61,9 @@ const ROOM = 20;          // interior side length
 const WALL_H = 12;
 const HALF = ROOM / 2;
 
+// walls the portal gun can shoot onto (populated by makeRoom)
+const portalableSurfaces = [];
+
 function makeRoom() {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.05 });
   const floorMat = new THREE.MeshStandardMaterial({ color: 0x6f7681, roughness: 0.7, metalness: 0.1 });
@@ -78,15 +81,18 @@ function makeRoom() {
 
   const wallGeo = new THREE.PlaneGeometry(ROOM, WALL_H);
   const walls = [
-    { pos: [0, WALL_H / 2, -HALF], rot: [0, 0, 0] },
-    { pos: [0, WALL_H / 2, HALF], rot: [0, Math.PI, 0] },
-    { pos: [-HALF, WALL_H / 2, 0], rot: [0, Math.PI / 2, 0] },
-    { pos: [HALF, WALL_H / 2, 0], rot: [0, -Math.PI / 2, 0] },
+    { pos: [0, WALL_H / 2, -HALF], rot: [0, 0, 0], n: [0, 0, 1] },
+    { pos: [0, WALL_H / 2, HALF], rot: [0, Math.PI, 0], n: [0, 0, -1] },
+    { pos: [-HALF, WALL_H / 2, 0], rot: [0, Math.PI / 2, 0], n: [1, 0, 0] },
+    { pos: [HALF, WALL_H / 2, 0], rot: [0, -Math.PI / 2, 0], n: [-1, 0, 0] },
   ];
   for (const w of walls) {
     const m = new THREE.Mesh(wallGeo, wallMat);
     m.position.set(...w.pos);
     m.rotation.set(...w.rot);
+    // tag as a portalable surface with its (reliable, axis-aligned) inward normal
+    m.userData.portalNormal = new THREE.Vector3(...w.n);
+    portalableSurfaces.push(m);
     scene.add(m);
     // a glowing trim strip so surfaces read with contrast in ASCII
     const strip = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, 0.35), trimMat);
@@ -128,7 +134,7 @@ const props = makeProps();
 /* ------------------------------------------------------------------ *
  * Portals — one fixed blue/orange pair (left wall <-> back wall)
  * ------------------------------------------------------------------ */
-const portals = new PortalSystem(gameRenderer, scene, HALF);
+const portals = new PortalSystem(gameRenderer, scene, HALF, WALL_H);
 portals.addPair(
   { // BLUE, on the left wall, facing +X into the room
     center: new THREE.Vector3(-HALF + 0.08, EYE_HEIGHT, -3),
@@ -169,6 +175,8 @@ window.addEventListener('keydown', (e) => {
     case 'KeyA': case 'ArrowLeft': keys.left = true; break;
     case 'KeyD': case 'ArrowRight': keys.right = true; break;
     case 'Space': if (canJump) { velocity.y = JUMP_SPEED; canJump = false; } break;
+    case 'KeyQ': fireGun(0); break;   // blue portal at the crosshair
+    case 'KeyF': fireGun(1); break;   // orange portal at the crosshair
     case 'BracketLeft':  ascii.setColumns(Math.max(60, ascii.columns - 20)); updateHud(); break;
     case 'BracketRight': ascii.setColumns(Math.min(320, ascii.columns + 20)); updateHud(); break;
     case 'KeyC': ascii.setColor(!ascii.color); updateHud(); break;
@@ -187,6 +195,27 @@ window.addEventListener('keyup', (e) => {
 const RAMPS = ['standard', 'detailed', 'blocks'];
 let rampIdx = 0;
 function cycleRamp() { rampIdx = (rampIdx + 1) % RAMPS.length; ascii.setRamp(RAMPS[rampIdx]); updateHud(); }
+
+/* ------------------------------------------------------------------ *
+ * Portal gun — raycast from the crosshair onto a wall, move a portal there
+ * ------------------------------------------------------------------ */
+const raycaster = new THREE.Raycaster();
+const SCREEN_CENTER = new THREE.Vector2(0, 0); // crosshair = center of view
+
+function fireGun(which) {          // 0 = blue, 1 = orange
+  if (!controls.isLocked) return;
+  raycaster.setFromCamera(SCREEN_CENTER, camera);
+  const hits = raycaster.intersectObjects(portalableSurfaces, false);
+  if (!hits.length) return;
+  portals.place(which, hits[0].point, hits[0].object.userData.portalNormal);
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (!controls.isLocked) return;
+  // right-click OR shift-click = orange; plain left-click = blue
+  fireGun(e.button === 2 || e.shiftKey ? 1 : 0);
+});
+document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 /* ------------------------------------------------------------------ *
  * Layout / sizing — match the 3D aspect to the window, fit the ASCII output
@@ -211,7 +240,7 @@ function updateHud() {
   hud.innerHTML =
     `cols <b>${ascii.columns}</b> &nbsp; ramp <b>${RAMPS[rampIdx]}</b> &nbsp; ` +
     `mode <b>${ascii.color ? 'color' : 'mono'}</b><br>` +
-    `<span class="dim">WASD move · mouse look · space jump · [ ] resolution · V charset · C color</span>`;
+    `<span class="dim">WASD move · mouse look · space jump · click/Q blue · shift-click/F orange · [ ] res · V charset · C color</span>`;
 }
 updateHud();
 

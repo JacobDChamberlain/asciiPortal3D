@@ -146,5 +146,17 @@ wall (perpendicular, so teleporting turns a corner through space).
   openings so they can walk through the plane.
 - Non-recursive (both groups hidden during target renders) — ASCII hides seams.
 
-Gun placement is deliberately deferred: fixed portals first to prove
-render+teleport, gun (raycast onto walls) built on top afterward.
+**Step 4 (portal gun) DONE and author-approved.** Raycast from the crosshair
+(`fireGun` in `main.js`) onto a portalable wall; `PortalSystem.place()` snaps to
+the wall plane, clamps the mouth to fit, re-poses the portal (`Portal.setPose`)
+and relinks. Left-click/`Q` = blue, right-click/shift-click/`F` = orange. Walls
+are tagged `userData.portalNormal` (axis-aligned, reliable). Crosshair is a DOM
+`+`. Portals are now fully dynamic; render-through + teleport follow moves.
+
+**Next up: floor & ceiling portals + the fling.** Currently only the 4 vertical
+walls are portalable (keeps teleport yaw-only, which PointerLockControls handles
+cleanly). Floor/ceiling need fuller orientation handling (pitch/roll through the
+transform) and unlock momentum flinging (fall into a floor portal → launch out a
+wall portal). The teleport already applies the full matrix to velocity +
+orientation via quaternion, so the math is mostly there; the care is in
+PointerLockControls' euler decomposition not getting a roll it can't represent.
