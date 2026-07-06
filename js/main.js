@@ -177,12 +177,46 @@ const AIR_ACCEL = 14;       // gentle steering while airborne (momentum preserve
 const GRAVITY = 32;
 const JUMP_SPEED = 12;
 const MAX_FALL = 55;        // terminal fall speed (keeps portal loops stable)
+const PLAYER_RADIUS = 0.6;  // horizontal half-width for cube collision
 
 const SPAWN = new THREE.Vector3(0, EYE_HEIGHT, 8);
 function respawn() {
   camera.position.copy(SPAWN);
   velocity.set(0, 0, 0);
   portals.prev = null;   // reset the crossing tracker so we don't insta-teleport
+}
+
+// Resolve the player (a vertical box: PLAYER_RADIUS wide, feet..head tall)
+// against the cube via minimal-translation AABB, so you can stand on it and
+// can't walk through it. Skipped while the cube is carried.
+function resolvePlayerCube() {
+  if (cube.carried) return;
+  const ph = PLAYER_RADIUS, ch = cube.halfHeight, c = cube.position;
+  const px = camera.position.x, pz = camera.position.z;
+  const feetY = camera.position.y - EYE_HEIGHT, headY = camera.position.y + 0.2;
+
+  const oX = Math.min(px + ph, c.x + ch) - Math.max(px - ph, c.x - ch);
+  const oZ = Math.min(pz + ph, c.z + ch) - Math.max(pz - ph, c.z - ch);
+  const oY = Math.min(headY, c.y + ch) - Math.max(feetY, c.y - ch);
+  if (oX <= 0 || oZ <= 0 || oY <= 0) return;   // not overlapping
+
+  // push out along the axis of least penetration
+  if (oY <= oX && oY <= oZ) {
+    if (camera.position.y > c.y) {             // land on top of the cube
+      camera.position.y = c.y + ch + EYE_HEIGHT;
+      if (velocity.y < 0) velocity.y = 0;
+      onGround = true; canJump = true;
+    } else {                                    // bonk head on the underside
+      camera.position.y = c.y - ch - 0.2;
+      if (velocity.y > 0) velocity.y = 0;
+    }
+  } else if (oX <= oZ) {
+    camera.position.x += px >= c.x ? oX : -oX;
+    velocity.x = 0;
+  } else {
+    camera.position.z += pz >= c.z ? oZ : -oZ;
+    velocity.z = 0;
+  }
 }
 
 window.addEventListener('keydown', (e) => {
@@ -320,6 +354,8 @@ function animate(now) {
 
     // the weighted cube: physics, carry/throw, and its own portal travel
     cube.update(dt, camera);
+    // let the player stand on / be blocked by the cube
+    resolvePlayerCube();
   }
 
   // gentle prop motion so the scene is alive even while standing still

@@ -7,7 +7,7 @@ import * as THREE from 'three';
 
 const GRAB_REACH  = 7;     // how close you must be to pick it up
 const CARRY_DIST  = 3.2;   // how far in front of the camera it floats when held
-const THROW_SPEED = 20;
+const THROW_SPEED = 12;
 const GRAVITY     = 32;
 const MAX_FALL    = 55;
 const FRICTION    = 0.86;  // ground friction per frame-ish so it settles
@@ -106,7 +106,7 @@ export class WeightedCube {
     this.carried = false;
     this._tmp.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
     this.velocity.copy(this._tmp).multiplyScalar(THROW_SPEED);
-    this.velocity.y += 3;
+    this.velocity.y += 2;
     this._prev = null;
     return true;
   }
