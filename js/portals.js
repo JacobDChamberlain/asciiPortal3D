@@ -20,7 +20,9 @@ const FLIP = new THREE.Matrix4().makeRotationY(Math.PI);
 
 const PORTAL_VERT = /* glsl */`
   varying vec4 vClip;
+  varying vec2 vUv;
   void main() {
+    vUv = uv;
     vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     vClip = clip;
     gl_Position = clip;
@@ -29,10 +31,12 @@ const PORTAL_VERT = /* glsl */`
 
 // Sample the render target by the fragment's on-screen position, so the
 // through-view lines up with where the quad actually sits in the main view.
+// The quad is masked to an ellipse so the mouth reads as an oval.
 const PORTAL_FRAG = /* glsl */`
   uniform sampler2D uTex;
   uniform vec3 uEdge;
   varying vec4 vClip;
+  varying vec2 vUv;
   // The render target holds LINEAR light; our shader writes straight to the
   // canvas without the renderer's usual sRGB output step, so encode it here to
   // match the brightness of the rest of the frame.
@@ -42,10 +46,30 @@ const PORTAL_FRAG = /* glsl */`
     return mix(hi, lo, step(c, vec3(0.0031308)));
   }
   void main() {
+    vec2 d = (vUv - 0.5) / 0.5;         // -1..1 across the quad
+    if (dot(d, d) > 1.0) discard;       // oval mouth
     vec2 uv = (vClip.xy / vClip.w) * 0.5 + 0.5;
     vec3 col = lin2srgb(texture2D(uTex, uv).rgb);
     // subtle edge tint so the mouth reads as blue/orange even in the view
     gl_FragColor = vec4(mix(col, uEdge, 0.06), 1.0);
+  }
+`;
+
+// Flat oval used for the bright portal rim behind the mouth.
+const FRAME_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const FRAME_FRAG = /* glsl */`
+  uniform vec3 uColor;
+  varying vec2 vUv;
+  void main() {
+    vec2 d = (vUv - 0.5) / 0.5;
+    if (dot(d, d) > 1.0) discard;
+    gl_FragColor = vec4(uColor, 1.0);
   }
 `;
 
@@ -61,10 +85,14 @@ class Portal {
     this.group = new THREE.Group();
     scene.add(this.group);
 
-    // bright frame behind the mouth so the portal reads as a ring
+    // bright oval rim behind the mouth so the portal reads as a ring
     const frame = new THREE.Mesh(
       new THREE.PlaneGeometry(halfW * 2 + 0.5, halfH * 2 + 0.5),
-      new THREE.MeshBasicMaterial({ color })
+      new THREE.ShaderMaterial({
+        vertexShader: FRAME_VERT,
+        fragmentShader: FRAME_FRAG,
+        uniforms: { uColor: { value: new THREE.Color(color) } },
+      })
     );
     frame.position.z = -0.01;
     this.group.add(frame);
