@@ -375,9 +375,9 @@ fit();
  * ------------------------------------------------------------------ */
 function updateHud() {
   hud.innerHTML =
-    `<span class="dim">charset</span> <b>${RAMPS[rampIdx]}</b> &nbsp; ` +
-    `<span class="dim">mode</span> <b>${ascii.color ? 'color' : 'mono'}</b> &nbsp; ` +
-    `<span class="dim">cols</span> <b>${ascii.columns}</b>`;
+    `<span class="dim">charset</span> <span class="key">(v)</span> <b>${RAMPS[rampIdx]}</b> &nbsp; ` +
+    `<span class="dim">mode</span> <span class="key">(c)</span> <b>${ascii.color ? 'color' : 'mono'}</b> &nbsp; ` +
+    `<span class="dim">cols</span> <span class="key">([/])</span> <b>${ascii.columns}</b>`;
 }
 updateHud();
 

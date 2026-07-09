@@ -64,6 +64,7 @@ html, body {
 }
 #hud b { color: #eafff2; font-weight: 700; }
 #hud .dim { color: #6f9d88; }
+#hud .key { color: #7dffb0; }   /* the shortcut key, in green */
 
 /* Temporary debug readout (live player position) */
 #debug {
