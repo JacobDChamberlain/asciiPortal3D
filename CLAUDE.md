@@ -178,12 +178,23 @@ keeps its own upright first-person `postMove`). Carry it through a portal by
 holding it while you walk through. Six ASCII charsets now (added alphanumeric,
 numbers, letters).
 
-**The core Portal sandbox + cube are complete and feel right.** Everything from
-here is game/content, not core mechanics. Possible next directions (not chosen):
-- Actual test chambers (level geometry beyond one box room) + a goal (button →
-  door → exit), i.e., real puzzles with the drops that make flings shine.
-- Recursive portal rendering (portal-in-portal), if desired — ASCII hides most
-  of why it's hard.
-- Player<->cube collision / standing on the cube (currently they can overlap).
+**First test chamber DONE and author-approved.** `js/chamber.js` (`Chamber`):
+cube button that opens the exit only WHILE weighted (leave the cube on it),
+raised exit ledge reached via portals, exit pad + win banner, `R` to reset.
+- General box collision `js/collision.js` (`resolveBox`, `makeBox`): player and
+  cube stand on / are blocked by level solids. Player-vs-cube in
+  `resolvePlayerCube`, player-vs-solids in `resolvePlayerSolids` (main.js).
+- Room enlarged to 30×30×14; walls rebuilt as bright opaque panels with dark
+  metal frame grids (`addWallFrame`) for readability; brighter lighting +
+  floor/ceiling; decorative props removed.
+- Portal placement hardened: (a) can't shoot through a solid — `fireGun`
+  raycasts walls + `chamber.blockers`, nearest hit wins; (b) `_fitCenter` slides
+  the mouth to the nearest spot where the full oval fits, clear of obstacles
+  (`portals.obstacles = chamber.solids`) and never overlapping the other portal.
+
+**Still open / possible next directions:**
+- More chambers / a chamber sequence + progression.
+- Recursive portal rendering (portal-in-portal) — ASCII hides most of the hard.
 - The asciify-style on-screen resolution slider (still in backlog).
 - GLSL ASCII shader if the CPU pass ever bottlenecks.
+- Author had a list of feedback items in progress — continue through it.
