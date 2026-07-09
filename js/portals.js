@@ -167,6 +167,7 @@ export class PortalSystem {
     this.prev = null;       // camera position last frame
     this.cooldown = 0;
     this._tmp = new THREE.Vector3();
+    this.obstacles = [];    // solid AABBs a portal mouth must not clip into
   }
 
   /** Create the blue/orange pair, place them, and link both ways. */
@@ -211,8 +212,75 @@ export class PortalSystem {
       c.x = clamp(c.x, -R + hw, R - hw);
       c.y = clamp(c.y, hh, this.wallHeight - hh);
     }
+    // slide the mouth to the nearest spot where the FULL oval fits clear of
+    // obstacles (e.g. the ledge) and doesn't overlap the other portal. If there
+    // is genuinely no room on this surface, the shot is dropped.
+    if (!this._fitCenter(c, normal, p)) return false;
     p.setPose(c, normal.clone().normalize());
     this.relink();
+    return true;
+  }
+
+  // Nudge the portal center (in the wall's 2D plane) out of any forbidden zones
+  // — obstacle footprints and the other portal's mouth, each grown by the mouth
+  // half-size — while staying within the surface bounds. Mutates c; returns
+  // false if no valid position exists.
+  _fitCenter(c, normal, p) {
+    const hw = p.halfW, hh = p.halfH, R = this.roomHalf, WH = this.wallHeight;
+    let uAxis, vAxis, nAxis;
+    if (Math.abs(normal.x) > 0.5)      { uAxis = 'z'; vAxis = 'y'; nAxis = 'x'; }
+    else if (Math.abs(normal.z) > 0.5) { uAxis = 'x'; vAxis = 'y'; nAxis = 'z'; }
+    else                               { uAxis = 'x'; vAxis = 'z'; nAxis = 'y'; }
+
+    const uLo = -R + hw, uHi = R - hw;
+    const vLo = (vAxis === 'y') ? hh : -R + hh;
+    const vHi = (vAxis === 'y') ? WH - hh : R - hh;
+    const wallCoord = c[nAxis];
+
+    // forbidden rectangles for the CENTER (footprint grown by the mouth half)
+    const forb = [];
+    for (const s of this.obstacles) {
+      if (s.min[nAxis] - 0.2 <= wallCoord && wallCoord <= s.max[nAxis] + 0.2) {
+        forb.push({
+          uMin: s.min[uAxis] - hw, uMax: s.max[uAxis] + hw,
+          vMin: s.min[vAxis] - hh, vMax: s.max[vAxis] + hh,
+        });
+      }
+    }
+    const other = this.portals.find((x) => x !== p);
+    if (other && Math.abs(other.normal[nAxis]) > 0.5 &&
+        Math.abs(other.center[nAxis] - wallCoord) < 0.5) {
+      forb.push({
+        uMin: other.center[uAxis] - 2 * hw, uMax: other.center[uAxis] + 2 * hw,
+        vMin: other.center[vAxis] - 2 * hh, vMax: other.center[vAxis] + 2 * hh,
+      });
+    }
+
+    let cu = clamp(c[uAxis], uLo, uHi), cv = clamp(c[vAxis], vLo, vHi);
+    const E = 0.01;
+    for (let iter = 0; iter < 16; iter++) {
+      let moved = false;
+      for (const f of forb) {
+        if (cu > f.uMin && cu < f.uMax && cv > f.vMin && cv < f.vMax) {
+          const cands = [];
+          if (f.uMin - E >= uLo) cands.push({ du: f.uMin - E - cu, dv: 0 });
+          if (f.uMax + E <= uHi) cands.push({ du: f.uMax + E - cu, dv: 0 });
+          if (f.vMin - E >= vLo) cands.push({ du: 0, dv: f.vMin - E - cv });
+          if (f.vMax + E <= vHi) cands.push({ du: 0, dv: f.vMax + E - cv });
+          if (!cands.length) return false;   // boxed in with no exit
+          cands.sort((a, b) => Math.abs(a.du) + Math.abs(a.dv) - Math.abs(b.du) - Math.abs(b.dv));
+          cu = clamp(cu + cands[0].du, uLo, uHi);
+          cv = clamp(cv + cands[0].dv, vLo, vHi);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    for (const f of forb) {
+      if (cu > f.uMin && cu < f.uMax && cv > f.vMin && cv < f.vMax) return false;
+    }
+    c[uAxis] = cu; c[vAxis] = cv;
+    return true;
   }
 
   // Project a world point onto a portal's in-plane axes and test the opening.

@@ -10,6 +10,8 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { AsciiRenderer } from './asciiRenderer.js';
 import { PortalSystem } from './portals.js';
 import { WeightedCube } from './cube.js';
+import { Chamber } from './chamber.js';
+import { resolveBox } from './collision.js';
 
 /* ------------------------------------------------------------------ *
  * DOM
@@ -17,6 +19,9 @@ import { WeightedCube } from './cube.js';
 const asciiCanvas = document.getElementById('ascii');
 const overlay = document.getElementById('overlay');
 const hud = document.getElementById('hud');
+const banner = document.getElementById('banner');
+const showBanner = () => banner.classList.add('show');
+const hideBanner = () => banner.classList.remove('show');
 
 /* ------------------------------------------------------------------ *
  * Renderers
@@ -45,30 +50,53 @@ scene.fog = new THREE.Fog(0x05070c, 12, 42);
 
 const camera = new THREE.PerspectiveCamera(72, RENDER_W / renderH, 0.1, 200);
 const EYE_HEIGHT = 3.0;
-camera.position.set(0, EYE_HEIGHT, 8);
+camera.position.set(0, EYE_HEIGHT, -12);
 
-scene.add(new THREE.HemisphereLight(0x9fb4ff, 0x20160c, 0.55));
-const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+scene.add(new THREE.HemisphereLight(0xcdd8ff, 0x384048, 0.85));
+scene.add(new THREE.AmbientLight(0x4a5460, 0.45));
+const sun = new THREE.DirectionalLight(0xffffff, 1.25);
 sun.position.set(8, 16, 6);
 scene.add(sun);
-const fill = new THREE.PointLight(0x88bbff, 0.6, 60);
-fill.position.set(-6, 8, -6);
+const fill = new THREE.PointLight(0x9fc4ff, 0.7, 80);
+fill.position.set(-6, 9, -6);
 scene.add(fill);
+const ledgeLight = new THREE.PointLight(0xbfe0ff, 0.8, 60);  // lights the exit ledge
+ledgeLight.position.set(0, 10, 9);
+scene.add(ledgeLight);
 
 /* ------------------------------------------------------------------ *
- * The room  (a plain test chamber — walls, floor, ceiling, a few props)
+ * The room  (walls, floor, ceiling — the shell the chamber sits inside)
  * ------------------------------------------------------------------ */
-const ROOM = 20;          // interior side length
-const WALL_H = 12;
+const ROOM = 30;          // interior side length
+const WALL_H = 14;
 const HALF = ROOM / 2;
 
 // walls the portal gun can shoot onto (populated by makeRoom)
 const portalableSurfaces = [];
 
+// dark metal frame grid over a wall panel (Portal-style framed panels). Added
+// as children of the wall mesh so it inherits the wall's transform.
+function addWallFrame(wall) {
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x40464e, roughness: 0.45, metalness: 0.75 });
+  const t = 0.22, d = 0.16, z = 0.06;   // bar thickness, depth, offset toward room
+  const halfW = ROOM / 2, halfH = WALL_H / 2, cols = 5, rows = 3;
+  for (let i = 0; i <= cols; i++) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(t, WALL_H, d), frameMat);
+    bar.position.set(-halfW + (ROOM / cols) * i, 0, z);
+    wall.add(bar);
+  }
+  for (let j = 0; j <= rows; j++) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(ROOM, t, d), frameMat);
+    bar.position.set(0, -halfH + (WALL_H / rows) * j, z);
+    wall.add(bar);
+  }
+}
+
 function makeRoom() {
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.85, metalness: 0.05 });
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0x6f7681, roughness: 0.7, metalness: 0.1 });
-  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.9, metalness: 0.0 });
+  // bright opaque panels with dark metal frames, like the real test chambers
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xd6dbe2, roughness: 0.55, metalness: 0.05, emissive: 0x20242b, emissiveIntensity: 0.5 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x9aa0aa, roughness: 0.7, metalness: 0.1, emissive: 0x141820, emissiveIntensity: 0.35 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x767c85, roughness: 0.85, metalness: 0.0, emissive: 0x121820, emissiveIntensity: 0.35 });
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x2a5cff, roughness: 0.4, metalness: 0.2, emissive: 0x0a1a4a, emissiveIntensity: 0.6 });
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, ROOM), floorMat);
@@ -98,6 +126,7 @@ function makeRoom() {
     // tag as a portalable surface with its (reliable, axis-aligned) inward normal
     m.userData.portalNormal = new THREE.Vector3(...w.n);
     portalableSurfaces.push(m);
+    addWallFrame(m);
     scene.add(m);
     // a glowing trim strip so surfaces read with contrast in ASCII
     const strip = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, 0.35), trimMat);
@@ -110,26 +139,7 @@ function makeRoom() {
   }
 }
 
-// A few props so depth + parallax read clearly when you move and look around.
-function makeProps() {
-  const pillarMat = new THREE.MeshStandardMaterial({ color: 0x9aa0aa, roughness: 0.8 });
-  for (const [x, z] of [[6, -6], [-6, 5], [5, 5]]) {
-    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, WALL_H, 16), pillarMat);
-    p.position.set(x, WALL_H / 2, z);
-    scene.add(p);
-  }
-
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(1.3, 24, 16),
-    new THREE.MeshStandardMaterial({ color: 0xff5a5a, roughness: 0.3, metalness: 0.1, emissive: 0x330808 })
-  );
-  sphere.position.set(3, 1.3, -5);
-  scene.add(sphere);
-  return { sphere };
-}
-
 makeRoom();
-const props = makeProps();
 
 /* ------------------------------------------------------------------ *
  * Portals — one fixed blue/orange pair (left wall <-> back wall)
@@ -152,7 +162,35 @@ portals.setSize(RENDER_W, renderH);
 /* ------------------------------------------------------------------ *
  * Weighted cube — carry (E), drop (E), throw (T); flings through portals
  * ------------------------------------------------------------------ */
-const cube = new WeightedCube(scene, portals, HALF, WALL_H, { size: 2, spawn: [-4, 1, -3] });
+const cube = new WeightedCube(scene, portals, HALF, WALL_H, { size: 2, spawn: [-8, 1, -8] });
+
+/* ------------------------------------------------------------------ *
+ * The test chamber — cube button opens the exit; portal up to the ledge
+ * ------------------------------------------------------------------ */
+const chamber = new Chamber(scene, EYE_HEIGHT);
+portals.obstacles = chamber.solids;   // portals won't clip into the ledge/button
+
+// Player (a box) vs the chamber's solid geometry: stand on ledges, be blocked.
+const _pc = new THREE.Vector3();
+const PLAYER_HALF_Y = (EYE_HEIGHT + 0.2) / 2;
+function resolvePlayerSolids() {
+  _pc.set(camera.position.x, camera.position.y + 0.2 - PLAYER_HALF_Y, camera.position.z);
+  const grounded = resolveBox(
+    _pc, { x: PLAYER_RADIUS, y: PLAYER_HALF_Y, z: PLAYER_RADIUS }, velocity, chamber.solids
+  );
+  camera.position.x = _pc.x;
+  camera.position.z = _pc.z;
+  camera.position.y = _pc.y + PLAYER_HALF_Y - 0.2;   // back to eye height
+  if (grounded) { onGround = true; canJump = true; }
+}
+
+function resetChamber() {
+  chamber.reset();
+  cube.reset();
+  respawn();
+  won = false;
+  hideBanner();
+}
 
 /* ------------------------------------------------------------------ *
  * First-person controls  (pointer lock + WASD + jump)
@@ -166,6 +204,7 @@ controls.addEventListener('unlock', () => { overlay.classList.remove('hidden'); 
 const keys = { forward: false, back: false, left: false, right: false };
 let canJump = false;
 let onGround = false;
+let won = false;
 const velocity = new THREE.Vector3();     // WORLD-space: walking, gravity, flings
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -179,7 +218,7 @@ const JUMP_SPEED = 12;
 const MAX_FALL = 55;        // terminal fall speed (keeps portal loops stable)
 const PLAYER_RADIUS = 0.6;  // horizontal half-width for cube collision
 
-const SPAWN = new THREE.Vector3(0, EYE_HEIGHT, 8);
+const SPAWN = new THREE.Vector3(0, EYE_HEIGHT, -12);
 function respawn() {
   camera.position.copy(SPAWN);
   velocity.set(0, 0, 0);
@@ -230,6 +269,7 @@ window.addEventListener('keydown', (e) => {
     case 'KeyF': fireGun(1); break;   // orange portal at the crosshair
     case 'KeyE': cube.toggleGrab(camera); break;  // grab / drop the cube
     case 'KeyT': cube.throw(camera); break;       // throw the cube
+    case 'KeyR': resetChamber(); break;           // reset the chamber
     case 'BracketLeft':  ascii.setColumns(Math.max(60, ascii.columns - 20)); updateHud(); break;
     case 'BracketRight': ascii.setColumns(Math.min(320, ascii.columns + 20)); updateHud(); break;
     case 'KeyC': ascii.setColor(!ascii.color); updateHud(); break;
@@ -258,9 +298,13 @@ const SCREEN_CENTER = new THREE.Vector2(0, 0); // crosshair = center of view
 function fireGun(which) {          // 0 = blue, 1 = orange
   if (!controls.isLocked) return;
   raycaster.setFromCamera(SCREEN_CENTER, camera);
-  const hits = raycaster.intersectObjects(portalableSurfaces, false);
+  // test walls AND blockers together; take the nearest hit. If a blocker
+  // (ledge, button, barrier) is closer, the shot is absorbed — no portal.
+  const hits = raycaster.intersectObjects([...portalableSurfaces, ...chamber.blockers], false);
   if (!hits.length) return;
-  portals.place(which, hits[0].point, hits[0].object.userData.portalNormal);
+  const normal = hits[0].object.userData.portalNormal;
+  if (!normal) return;            // nearest surface isn't portalable
+  portals.place(which, hits[0].point, normal);
 }
 
 document.addEventListener('mousedown', (e) => {
@@ -293,7 +337,7 @@ function updateHud() {
   hud.innerHTML =
     `cols <b>${ascii.columns}</b> &nbsp; ramp <b>${RAMPS[rampIdx]}</b> &nbsp; ` +
     `mode <b>${ascii.color ? 'color' : 'mono'}</b><br>` +
-    `<span class="dim">WASD move · mouse look · space jump · click/Q blue · shift-click/F orange · E grab/drop · T throw · [ ] res · V charset · C color</span>`;
+    `<span class="dim">WASD move · mouse look · space jump · click/Q blue · shift-click/F orange · E grab/drop · T throw · R reset · [ ] res · V charset · C color</span>`;
 }
 updateHud();
 
@@ -352,14 +396,15 @@ function animate(now) {
     // safety net: if we somehow fall out of the world, respawn
     if (camera.position.y < -40 || camera.position.y > WALL_H + 60) respawn();
 
-    // the weighted cube: physics, carry/throw, and its own portal travel
-    cube.update(dt, camera);
-    // let the player stand on / be blocked by the cube
+    // player vs level geometry (ledges, button), then the cube, then the box
+    resolvePlayerSolids();
+    cube.update(dt, camera, chamber.solids);
     resolvePlayerCube();
+
+    // chamber logic: button -> unlock exit -> win
+    if (chamber.update(dt, camera, cube) && !won) { won = true; showBanner(); }
   }
 
-  // gentle prop motion so the scene is alive even while standing still
-  props.sphere.position.y = 1.6 + Math.sin(now * 0.0015) * 0.5;
 
   // 1) render each portal's through-view into its target, then the real frame
   portals.update(camera);

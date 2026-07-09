@@ -4,6 +4,7 @@
 // portals via PortalSystem.teleportObject — so you can fling it too.
 
 import * as THREE from 'three';
+import { resolveBox } from './collision.js';
 
 const GRAB_REACH  = 7;     // how close you must be to pick it up
 const CARRY_DIST  = 3.2;   // how far in front of the camera it floats when held
@@ -111,7 +112,7 @@ export class WeightedCube {
     return true;
   }
 
-  update(dt, camera) {
+  update(dt, camera, solids = []) {
     if (this.carried) {
       // float in front of the camera; teleporting the camera carries it along
       this._tmp.set(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -127,6 +128,13 @@ export class WeightedCube {
     this.velocity.y -= GRAVITY * dt;
     if (this.velocity.y < -MAX_FALL) this.velocity.y = -MAX_FALL;
     this.position.addScaledVector(this.velocity, dt);
+
+    // collide with level geometry (platforms, button) and settle friction on top
+    const h = this.halfHeight;
+    if (resolveBox(this.position, { x: h, y: h, z: h }, this.velocity, solids)) {
+      this.velocity.x *= FRICTION;
+      this.velocity.z *= FRICTION;
+    }
 
     // floor: rest at halfHeight unless over a floor-portal opening
     if (this.position.y < this.halfHeight && !this.portals.overFloorOpening(this.position)) {
