@@ -20,7 +20,13 @@ const asciiCanvas = document.getElementById('ascii');
 const overlay = document.getElementById('overlay');
 const hud = document.getElementById('hud');
 const banner = document.getElementById('banner');
-const showBanner = () => banner.classList.add('show');
+const bannerBig = banner.querySelector('.big');
+const bannerSub = banner.querySelector('.sub');
+function showBanner(big, sub = 'press R to reset') {
+  bannerBig.textContent = big;
+  bannerSub.textContent = sub;
+  banner.classList.add('show');
+}
 const hideBanner = () => banner.classList.remove('show');
 
 /* ------------------------------------------------------------------ *
@@ -38,8 +44,8 @@ const gameCanvas = gameRenderer.domElement; // never appended to the DOM
 
 const ascii = new AsciiRenderer(asciiCanvas);
 ascii.setColumns(200);
-ascii.setRamp('standard');
-ascii.setColor(false);   // mono green terminal look (fast: one fillText per row)
+ascii.setRamp('alphanumeric');
+ascii.setColor(true);   // color default (per-glyph tint); toggle to mono with C
 
 /* ------------------------------------------------------------------ *
  * Scene, camera, lights
@@ -189,6 +195,7 @@ function resetChamber() {
   cube.reset();
   respawn();
   won = false;
+  oob = false;
   hideBanner();
 }
 
@@ -205,6 +212,7 @@ const keys = { forward: false, back: false, left: false, right: false };
 let canJump = false;
 let onGround = false;
 let won = false;
+let oob = false;   // player is currently outside the map
 const velocity = new THREE.Vector3();     // WORLD-space: walking, gravity, flings
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -259,6 +267,9 @@ function resolvePlayerCube() {
 }
 
 window.addEventListener('keydown', (e) => {
+  // Paused / on the title (pointer unlocked): ignore keys — click to enter.
+  // Mid-game, Esc is handled by the browser (exits pointer lock -> pause menu).
+  if (!controls.isLocked) return;
   switch (e.code) {
     case 'KeyW': case 'ArrowUp': keys.forward = true; break;
     case 'KeyS': case 'ArrowDown': keys.back = true; break;
@@ -286,7 +297,7 @@ window.addEventListener('keyup', (e) => {
 });
 
 const RAMPS = ['standard', 'detailed', 'blocks', 'alphanumeric', 'numbers', 'letters'];
-let rampIdx = 0;
+let rampIdx = RAMPS.indexOf('alphanumeric');
 function cycleRamp() { rampIdx = (rampIdx + 1) % RAMPS.length; ascii.setRamp(RAMPS[rampIdx]); updateHud(); }
 
 /* ------------------------------------------------------------------ *
@@ -331,13 +342,13 @@ window.addEventListener('resize', fit);
 fit();
 
 /* ------------------------------------------------------------------ *
- * HUD
+ * In-game HUD — a short status readout (controls live on the title screen)
  * ------------------------------------------------------------------ */
 function updateHud() {
   hud.innerHTML =
-    `cols <b>${ascii.columns}</b> &nbsp; ramp <b>${RAMPS[rampIdx]}</b> &nbsp; ` +
-    `mode <b>${ascii.color ? 'color' : 'mono'}</b><br>` +
-    `<span class="dim">WASD move · mouse look · space jump · click/Q blue · shift-click/F orange · E grab/drop · T throw · R reset · [ ] res · V charset · C color</span>`;
+    `<span class="dim">charset</span> <b>${RAMPS[rampIdx]}</b> &nbsp; ` +
+    `<span class="dim">mode</span> <b>${ascii.color ? 'color' : 'mono'}</b> &nbsp; ` +
+    `<span class="dim">cols</span> <b>${ascii.columns}</b>`;
 }
 updateHud();
 
@@ -393,8 +404,17 @@ function animate(now) {
     portals.postMove(camera, velocity, dt);
     portals.clampToRoom(camera.position);
 
-    // safety net: if we somehow fall out of the world, respawn
-    if (camera.position.y < -40 || camera.position.y > WALL_H + 60) respawn();
+    // out of the map? (fell out top/bottom, or shoved past the walls). Show a
+    // message + log it once — recovery is left to R, so the break is visible.
+    // The margin clears the ~HALF+1 the portal openings allow during a crossing.
+    const OUT = HALF + 2.5;
+    const p = camera.position;
+    const outNow = p.y < -40 || p.y > WALL_H + 60 || Math.abs(p.x) > OUT || Math.abs(p.z) > OUT;
+    if (outNow && !oob) {
+      oob = true;
+      console.warn(`[out of map] player escaped at x=${p.x.toFixed(1)} y=${p.y.toFixed(1)} z=${p.z.toFixed(1)}`);
+      showBanner("LOOK WHAT YOU'VE DONE");
+    }
 
     // player vs level geometry (ledges, button), then the cube, then the box
     resolvePlayerSolids();
@@ -402,7 +422,7 @@ function animate(now) {
     resolvePlayerCube();
 
     // chamber logic: button -> unlock exit -> win
-    if (chamber.update(dt, camera, cube) && !won) { won = true; showBanner(); }
+    if (chamber.update(dt, camera, cube) && !won) { won = true; showBanner('TEST CHAMBER COMPLETE'); }
   }
 
 

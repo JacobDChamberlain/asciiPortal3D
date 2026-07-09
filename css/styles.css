@@ -42,20 +42,28 @@ html, body {
   opacity: 0.85;
 }
 
-/* HUD readout, bottom-left */
+/* HUD readout, bottom-left — dark panel so it's legible over the bright ASCII */
 #hud {
   position: absolute;
-  left: 12px;
-  bottom: 10px;
-  font-size: 12px;
-  line-height: 1.5;
+  right: 12px;
+  bottom: 12px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  white-space: nowrap;
+  text-align: right;
+  font-size: 13px;
+  line-height: 1.4;
   color: var(--ink);
-  text-shadow: 0 0 6px rgba(120, 255, 176, 0.4);
+  background: rgba(2, 7, 11, 0.82);
+  border: 1px solid #1c3a2e;
+  border-radius: 6px;
+  padding: 7px 12px;
+  text-shadow: 0 0 6px rgba(120, 255, 176, 0.35);
   pointer-events: none;
-  z-index: 5;
+  z-index: 9;
 }
-#hud b { color: #d9ffe9; }
-#hud .dim { color: var(--dim); }
+#hud b { color: #eafff2; font-weight: 700; }
+#hud .dim { color: #6f9d88; }
 
 /* Win banner */
 #banner {
@@ -99,13 +107,14 @@ html, body {
   letter-spacing: 6px;
   text-shadow: 0 0 14px rgba(120, 255, 176, 0.5);
 }
-.panel .tag { margin: 8px 0 26px; color: var(--dim); letter-spacing: 2px; }
+.panel .tag { margin: 8px 0 24px; color: var(--dim); letter-spacing: 2px; }
+
 .panel .go {
-  margin: 0 0 18px;
+  margin: 0 0 22px;
   font-size: 18px;
   letter-spacing: 3px;
   animation: pulse 1.6s ease-in-out infinite;
 }
-.panel .keys { color: var(--dim); font-size: 12px; letter-spacing: 1px; }
+.panel .keys { color: var(--dim); font-size: 12px; letter-spacing: 1px; line-height: 1.9; }
 
 @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
