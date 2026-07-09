@@ -19,6 +19,9 @@ import { resolveBox } from './collision.js';
 const asciiCanvas = document.getElementById('ascii');
 const overlay = document.getElementById('overlay');
 const hud = document.getElementById('hud');
+const debugEl = document.getElementById('debug');
+const SHOW_DEBUG = false;   // flip to true to show the live player-position readout
+debugEl.style.display = SHOW_DEBUG ? '' : 'none';
 const banner = document.getElementById('banner');
 const bannerBig = banner.querySelector('.big');
 const bannerSub = banner.querySelector('.sub');
@@ -206,7 +209,33 @@ const controls = new PointerLockControls(camera, document.body);
 
 overlay.addEventListener('click', () => controls.lock());
 controls.addEventListener('lock', () => { overlay.classList.add('hidden'); });
-controls.addEventListener('unlock', () => { overlay.classList.remove('hidden'); });
+controls.addEventListener('unlock', () => { overlay.classList.remove('hidden'); setRandomQuote(); });
+
+// Title-screen quotes (a fresh one each time it shows) — mostly Portal, plus a
+// few keepers.
+const QUOTES = [
+  'The cake is a lie.',
+  'This was a triumph. I’m making a note here: huge success.',
+  'Momentum is conserved between portals — speedy thing goes in, speedy thing comes out.',
+  'The Enrichment Center reminds you that the Weighted Companion Cube cannot speak.',
+  'Thank you for helping us help you help us all.',
+  'Well done. Here come the test results: you are a horrible person.',
+  'When life gives you lemons, don’t make lemonade. Make life take the lemons back!',
+  'Please note that we have added a consequence for failure.',
+  'You will be baked, and then there will be cake.',
+  'Despite your violent behavior, the only thing you’ve managed to break so far is my heart.',
+  'Well, well, well. How the turntables…',
+  'I’m not superstitious, but I am a little stitious.',
+  'R is among the most menacing of sounds. That’s why they call it “murder” and not “mukduk.”',
+  '“‘You miss 100% of the shots you don’t take.’ — Wayne Gretzky” — Michael Scott',
+  'I am Beyoncé, always.',
+  'Sometimes I’ll start a sentence and I don’t even know where it’s going. I just hope I find it along the way.',
+];
+const tagEl = document.querySelector('.tag');
+function setRandomQuote() {
+  tagEl.textContent = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+}
+setRandomQuote();
 
 const keys = { forward: false, back: false, left: false, right: false };
 let canJump = false;
@@ -404,18 +433,6 @@ function animate(now) {
     portals.postMove(camera, velocity, dt);
     portals.clampToRoom(camera.position);
 
-    // out of the map? (fell out top/bottom, or shoved past the walls). Show a
-    // message + log it once — recovery is left to R, so the break is visible.
-    // The margin clears the ~HALF+1 the portal openings allow during a crossing.
-    const OUT = HALF + 2.5;
-    const p = camera.position;
-    const outNow = p.y < -40 || p.y > WALL_H + 60 || Math.abs(p.x) > OUT || Math.abs(p.z) > OUT;
-    if (outNow && !oob) {
-      oob = true;
-      console.warn(`[out of map] player escaped at x=${p.x.toFixed(1)} y=${p.y.toFixed(1)} z=${p.z.toFixed(1)}`);
-      showBanner("LOOK WHAT YOU'VE DONE");
-    }
-
     // player vs level geometry (ledges, button), then the cube, then the box
     resolvePlayerSolids();
     cube.update(dt, camera, chamber.solids);
@@ -423,8 +440,34 @@ function animate(now) {
 
     // chamber logic: button -> unlock exit -> win
     if (chamber.update(dt, camera, cube) && !won) { won = true; showBanner('TEST CHAMBER COMPLETE'); }
+
+    // out of the map? Checked at END of frame (AFTER collision), because the
+    // solid resolver is what can shove you past a wall (e.g. through the back
+    // wall behind the ledge). Show a message + log once; recover with R.
+    // 0.4 past a wall = genuinely out (legit portal crossings teleport before
+    // this runs, so they never register here).
+    const OUT = HALF + 0.4;
+    const p = camera.position;
+    const outNow = p.y < -40 || p.y > WALL_H + 60 || Math.abs(p.x) > OUT || Math.abs(p.z) > OUT;
+    if (outNow && !oob) {
+      oob = true;
+      console.warn(`[out of map] player escaped at x=${p.x.toFixed(1)} y=${p.y.toFixed(1)} z=${p.z.toFixed(1)}`);
+      showBanner("LOOK WHAT YOU'VE DONE");
+    } else if (!outNow && oob) {
+      // back inside the map — clear the message (unless a win banner is up)
+      oob = false;
+      if (won) showBanner('TEST CHAMBER COMPLETE'); else hideBanner();
+    }
   }
 
+
+  // live position readout for debugging out-of-map issues (toggle SHOW_DEBUG)
+  if (SHOW_DEBUG) {
+    const dp = camera.position;
+    debugEl.textContent =
+      `x ${dp.x.toFixed(1)}  y ${dp.y.toFixed(1)}  z ${dp.z.toFixed(1)}   ` +
+      `(walls ±${HALF}, out at ±${(HALF + 0.4).toFixed(1)})`;
+  }
 
   // 1) render each portal's through-view into its target, then the real frame
   portals.update(camera);

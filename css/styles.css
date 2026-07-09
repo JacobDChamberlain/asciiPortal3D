@@ -65,6 +65,22 @@ html, body {
 #hud b { color: #eafff2; font-weight: 700; }
 #hud .dim { color: #6f9d88; }
 
+/* Temporary debug readout (live player position) */
+#debug {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 12px;
+  color: #ffce7a;
+  background: rgba(2, 7, 11, 0.82);
+  border: 1px solid #3a2f1c;
+  border-radius: 5px;
+  padding: 5px 9px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9;
+}
+
 /* Win banner */
 #banner {
   position: absolute;
@@ -107,7 +123,14 @@ html, body {
   letter-spacing: 6px;
   text-shadow: 0 0 14px rgba(120, 255, 176, 0.5);
 }
-.panel .tag { margin: 8px 0 24px; color: var(--dim); letter-spacing: 2px; }
+.panel .tag {
+  margin: 12px auto 26px;
+  max-width: 520px;
+  color: var(--dim);
+  letter-spacing: 0.4px;
+  line-height: 1.55;
+  font-style: italic;
+}
 
 .panel .go {
   margin: 0 0 22px;
