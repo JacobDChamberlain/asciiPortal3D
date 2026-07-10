@@ -10,7 +10,8 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { AsciiRenderer } from './asciiRenderer.js';
 import { PortalSystem } from './portals.js';
 import { WeightedCube } from './cube.js';
-import { Chamber } from './chamber.js';
+import { Level, LEVELS } from './levels.js';
+import { Avatar } from './avatar.js';
 import { resolveBox } from './collision.js';
 
 /* ------------------------------------------------------------------ *
@@ -19,6 +20,8 @@ import { resolveBox } from './collision.js';
 const asciiCanvas = document.getElementById('ascii');
 const overlay = document.getElementById('overlay');
 const hud = document.getElementById('hud');
+const loadingEl = document.getElementById('loading');
+const objectiveEl = document.getElementById('objective');
 const debugEl = document.getElementById('debug');
 const SHOW_DEBUG = false;   // flip to true to show the live player-position readout
 debugEl.style.display = SHOW_DEBUG ? '' : 'none';
@@ -31,6 +34,10 @@ function showBanner(big, sub = 'press R to reset') {
   banner.classList.add('show');
 }
 const hideBanner = () => banner.classList.remove('show');
+let bannerTimer = 0;   // >0 => auto-hide a transient banner (e.g. gun pickup)
+function flashBanner(big, sub, secs) { showBanner(big, sub); bannerTimer = secs; }
+
+let unasciify = false;   // debug: show the raw 3D render instead of ASCII
 
 /* ------------------------------------------------------------------ *
  * Renderers
@@ -169,23 +176,88 @@ portals.addPair(
 portals.setSize(RENDER_W, renderH);
 
 /* ------------------------------------------------------------------ *
- * Weighted cube — carry (E), drop (E), throw (T); flings through portals
+ * Weighted cube + player avatar (Max, seen only through portals)
  * ------------------------------------------------------------------ */
-const cube = new WeightedCube(scene, portals, HALF, WALL_H, { size: 2, spawn: [-8, 1, -8] });
+const cube = new WeightedCube(scene, portals, HALF, WALL_H, { size: 2, spawn: [0, 1, -9] });
+const avatar = new Avatar(scene, EYE_HEIGHT);
 
 /* ------------------------------------------------------------------ *
- * The test chamber — cube button opens the exit; portal up to the ledge
+ * Levels + gun state
  * ------------------------------------------------------------------ */
-const chamber = new Chamber(scene, EYE_HEIGHT);
-portals.obstacles = chamber.solids;   // portals won't clip into the ledge/button
+let currentLevel = null;
+let levelIndex = 0;
+let hasGun = false;
+let loadingTimer = 0;        // >0 while the loading screen is up
+const levelCtx = { eyeHeight: EYE_HEIGHT, hasGun: false, grantGun: grantGun };
 
-// Player (a box) vs the chamber's solid geometry: stand on ledges, be blocked.
+function grantGun() {
+  if (hasGun) return;
+  hasGun = true;
+  portals.active = true;
+  avatar.setHasGun(true);
+  flashBanner('PORTAL DEVICE ACQUIRED', 'left-click / Q · blue   —   shift-click / F · orange', 3.0);
+}
+
+// Re-pose the portal pair to neutral default spots (used on each level load).
+function resetPortals() {
+  portals.portals[0].setPose(new THREE.Vector3(-HALF, EYE_HEIGHT, -3), new THREE.Vector3(1, 0, 0));
+  portals.portals[1].setPose(new THREE.Vector3(3, EYE_HEIGHT, -HALF), new THREE.Vector3(0, 0, 1));
+  portals.relink();
+  portals.prev = null;
+}
+
+function loadLevel(i) {
+  if (currentLevel) currentLevel.dispose();
+  levelIndex = i;
+  currentLevel = new Level(scene, LEVELS[i]);
+  portals.obstacles = currentLevel.solids;
+
+  // gun: chamber 00 (index 0) starts gun-less; later chambers you already have it
+  hasGun = i > 0;
+  portals.active = hasGun;
+  avatar.setHasGun(hasGun);
+
+  // player spawn
+  const s = currentLevel.spawn;
+  SPAWN.set(s[0], s[1], s[2]);
+  camera.position.copy(SPAWN);
+  velocity.set(0, 0, 0);
+
+  // cube spawn (levels may omit a cube)
+  if (currentLevel.cubeSpawn) {
+    cube.spawn.set(...currentLevel.cubeSpawn);
+    cube.reset();
+    cube.mesh.visible = true;
+  } else {
+    cube.carried = false;
+    cube.mesh.visible = false;
+  }
+
+  resetPortals();
+  won = false; oob = false;
+  hideBanner();
+  if (objectiveEl) objectiveEl.textContent = currentLevel.hint;
+  updateHud();
+}
+
+function advanceLevel() {
+  if (levelIndex + 1 < LEVELS.length) {
+    loadingTimer = 1.8;
+    loadingEl.textContent = 'ENTERING ' + LEVELS[levelIndex + 1].name + ' …';
+    loadingEl.classList.add('show');
+  } else {
+    won = true;
+    showBanner('ALL CHAMBERS COMPLETE', 'more are coming — press R to replay');
+  }
+}
+
+// Player (a box) vs the current level's solid geometry: stand on ledges, be blocked.
 const _pc = new THREE.Vector3();
 const PLAYER_HALF_Y = (EYE_HEIGHT + 0.2) / 2;
 function resolvePlayerSolids() {
   _pc.set(camera.position.x, camera.position.y + 0.2 - PLAYER_HALF_Y, camera.position.z);
   const grounded = resolveBox(
-    _pc, { x: PLAYER_RADIUS, y: PLAYER_HALF_Y, z: PLAYER_RADIUS }, velocity, chamber.solids
+    _pc, { x: PLAYER_RADIUS, y: PLAYER_HALF_Y, z: PLAYER_RADIUS }, velocity, currentLevel.solids
   );
   camera.position.x = _pc.x;
   camera.position.z = _pc.z;
@@ -193,14 +265,7 @@ function resolvePlayerSolids() {
   if (grounded) { onGround = true; canJump = true; }
 }
 
-function resetChamber() {
-  chamber.reset();
-  cube.reset();
-  respawn();
-  won = false;
-  oob = false;
-  hideBanner();
-}
+function resetChamber() { loadLevel(levelIndex); }
 
 /* ------------------------------------------------------------------ *
  * First-person controls  (pointer lock + WASD + jump)
@@ -314,6 +379,7 @@ window.addEventListener('keydown', (e) => {
     case 'BracketRight': ascii.setColumns(Math.min(320, ascii.columns + 20)); updateHud(); break;
     case 'KeyC': ascii.setColor(!ascii.color); updateHud(); break;
     case 'KeyV': cycleRamp(); break;
+    case 'KeyU': toggleUnasciify(); break;   // debug: raw 3D vs ASCII
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -329,6 +395,13 @@ const RAMPS = ['standard', 'detailed', 'blocks', 'alphanumeric', 'numbers', 'let
 let rampIdx = RAMPS.indexOf('alphanumeric');
 function cycleRamp() { rampIdx = (rampIdx + 1) % RAMPS.length; ascii.setRamp(RAMPS[rampIdx]); updateHud(); }
 
+const unasciifyBtn = document.getElementById('unasciifyBtn');
+function toggleUnasciify() {
+  unasciify = !unasciify;
+  if (unasciifyBtn) unasciifyBtn.classList.toggle('on', unasciify);
+}
+if (unasciifyBtn) unasciifyBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleUnasciify(); });
+
 /* ------------------------------------------------------------------ *
  * Portal gun — raycast from the crosshair onto a wall, move a portal there
  * ------------------------------------------------------------------ */
@@ -336,11 +409,11 @@ const raycaster = new THREE.Raycaster();
 const SCREEN_CENTER = new THREE.Vector2(0, 0); // crosshair = center of view
 
 function fireGun(which) {          // 0 = blue, 1 = orange
-  if (!controls.isLocked) return;
+  if (!controls.isLocked || !hasGun) return;   // no gun yet -> no portals
   raycaster.setFromCamera(SCREEN_CENTER, camera);
   // test walls AND blockers together; take the nearest hit. If a blocker
-  // (ledge, button, barrier) is closer, the shot is absorbed — no portal.
-  const hits = raycaster.intersectObjects([...portalableSurfaces, ...chamber.blockers], false);
+  // (ledge, door, pedestal…) is closer, the shot is absorbed — no portal.
+  const hits = raycaster.intersectObjects([...portalableSurfaces, ...currentLevel.blockers], false);
   if (!hits.length) return;
   const normal = hits[0].object.userData.portalNormal;
   if (!normal) return;            // nearest surface isn't portalable
@@ -391,7 +464,18 @@ function animate(now) {
   if (dt > 0.1) dt = 0.1;
   last = now;
 
-  if (controls.isLocked) {
+  // loading screen between chambers
+  if (loadingTimer > 0) {
+    loadingTimer -= dt;
+    if (loadingTimer <= 0) { loadLevel(levelIndex + 1); loadingEl.classList.remove('show'); }
+  }
+  // auto-hide transient banners (gun pickup), unless a win/oob banner is up
+  if (bannerTimer > 0) {
+    bannerTimer -= dt;
+    if (bannerTimer <= 0 && !won && !oob) hideBanner();
+  }
+
+  if (controls.isLocked && loadingTimer <= 0) {
     // horizontal input direction in WORLD space (from where the camera faces)
     _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion); _fwd.y = 0; _fwd.normalize();
     _right.set(1, 0, 0).applyQuaternion(camera.quaternion); _right.y = 0; _right.normalize();
@@ -435,11 +519,12 @@ function animate(now) {
 
     // player vs level geometry (ledges, button), then the cube, then the box
     resolvePlayerSolids();
-    cube.update(dt, camera, chamber.solids);
+    cube.update(dt, camera, currentLevel.solids);
     resolvePlayerCube();
 
-    // chamber logic: button -> unlock exit -> win
-    if (chamber.update(dt, camera, cube) && !won) { won = true; showBanner('TEST CHAMBER COMPLETE'); }
+    // chamber logic: buttons/doors/gun/exit -> advance when the exit is reached
+    levelCtx.hasGun = hasGun;
+    if (currentLevel.update(dt, camera, cube, levelCtx) && !won) advanceLevel();
 
     // out of the map? Checked at END of frame (AFTER collision), because the
     // solid resolver is what can shove you past a wall (e.g. through the back
@@ -469,10 +554,23 @@ function animate(now) {
       `(walls ±${HALF}, out at ±${(HALF + 0.4).toFixed(1)})`;
   }
 
+  // Max stands where the camera is (only ever seen through portals)
+  avatar.update(camera);
+
   // 1) render each portal's through-view into its target, then the real frame
   portals.update(camera);
   gameRenderer.render(scene, camera);
-  // 2) convert that frame to ASCII on the visible canvas
-  ascii.render(gameCanvas, gameCanvas.width, gameCanvas.height);
+  // 2) show it — either as ASCII (normal) or raw 3D (debug un-asciify)
+  if (unasciify) {
+    if (asciiCanvas.width !== gameCanvas.width || asciiCanvas.height !== gameCanvas.height) {
+      asciiCanvas.width = gameCanvas.width;
+      asciiCanvas.height = gameCanvas.height;
+    }
+    asciiCanvas.getContext('2d').drawImage(gameCanvas, 0, 0);
+  } else {
+    ascii.render(gameCanvas, gameCanvas.width, gameCanvas.height);
+  }
 }
+
+loadLevel(0);
 requestAnimationFrame(animate);

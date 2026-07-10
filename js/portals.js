@@ -162,12 +162,14 @@ export class PortalSystem {
 
     this.vcam = new THREE.PerspectiveCamera();
     this.vcam.matrixAutoUpdate = false;
+    this.vcam.layers.enable(1);   // render the player avatar (layer 1) THROUGH portals
     this.clip = new THREE.Plane();
 
     this.prev = null;       // camera position last frame
     this.cooldown = 0;
     this._tmp = new THREE.Vector3();
     this.obstacles = [];    // solid AABBs a portal mouth must not clip into
+    this.active = true;     // false = no gun yet: portals hidden + inert
   }
 
   /** Create the blue/orange pair, place them, and link both ways. */
@@ -293,6 +295,7 @@ export class PortalSystem {
   // True if the player is standing over a floor-portal opening (so the floor
   // collision should let them drop through instead of catching them).
   overFloorOpening(pos) {
+    if (!this.active) return false;
     for (const p of this.portals) {
       if (p.normal.y > 0.5 && this._inOpening(p, pos, 0.1)) return true;
     }
@@ -309,7 +312,7 @@ export class PortalSystem {
 
   // Render each portal's through-view into its target from a virtual camera.
   update(cam) {
-    if (this.portals.length < 2) return;
+    if (!this.active || this.portals.length < 2) { this._setGroupsVisible(false); return; }
     this._setGroupsVisible(false);
     const prevPlanes = this.renderer.clippingPlanes;
     for (const p of this.portals) {
@@ -337,6 +340,7 @@ export class PortalSystem {
   // Called after movement each frame. Teleports the camera if it crossed a
   // portal plane inside the opening; keeps velocity/orientation consistent.
   postMove(cam, velocity, dt) {
+    if (!this.active) return;
     if (this.cooldown > 0) this.cooldown -= dt;
     const now = cam.position;
     if (!this.prev) { this.prev = now.clone(); return; }
@@ -386,6 +390,7 @@ export class PortalSystem {
   // floor/ceiling), clearance (exit nudge), and mutable _prev / _cool fields.
   // Returns true if it teleported this call.
   teleportObject(body, dt) {
+    if (!this.active) return false;
     if (body._cool > 0) body._cool -= dt;
     const now = body.position;
     if (!body._prev) { body._prev = now.clone(); return false; }
@@ -425,12 +430,14 @@ export class PortalSystem {
     const inset = this.roomHalf - 0.5;
     let minX = -inset, maxX = inset, minZ = -inset, maxZ = inset;
     const OPEN = this.roomHalf + 1;
-    for (const p of this.portals) {
-      const n = p.normal;
-      if (Math.abs(n.y) > 0.5) continue;          // floor/ceiling: no wall gap
-      if (!this._inOpening(p, pos, 0.3)) continue;
-      if (Math.abs(n.x) > 0.5) { if (n.x > 0) minX = -OPEN; else maxX = OPEN; }
-      else { if (n.z > 0) minZ = -OPEN; else maxZ = OPEN; }
+    if (this.active) {
+      for (const p of this.portals) {
+        const n = p.normal;
+        if (Math.abs(n.y) > 0.5) continue;          // floor/ceiling: no wall gap
+        if (!this._inOpening(p, pos, 0.3)) continue;
+        if (Math.abs(n.x) > 0.5) { if (n.x > 0) minX = -OPEN; else maxX = OPEN; }
+        else { if (n.z > 0) minZ = -OPEN; else maxZ = OPEN; }
+      }
     }
     pos.x = clamp(pos.x, minX, maxX);
     pos.z = clamp(pos.z, minZ, maxZ);

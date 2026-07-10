@@ -82,6 +82,60 @@ html, body {
   z-index: 9;
 }
 
+/* Objective hint (top center) */
+#objective {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 72vw;
+  text-align: center;
+  font-size: 13px;
+  color: #cfe6d8;
+  background: rgba(2, 7, 11, 0.72);
+  border: 1px solid #1c3a2e;
+  border-radius: 6px;
+  padding: 6px 12px;
+  z-index: 7;
+  pointer-events: none;
+}
+
+/* Un-asciify debug button (top right) */
+#unasciifyBtn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 11;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #bfe0cf;
+  background: #0a1712;
+  border: 1px solid #2c5646;
+  border-radius: 5px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+#unasciifyBtn:hover { border-color: #4f9d80; color: #eafff2; }
+#unasciifyBtn.on { background: #1c6a4c; border-color: #6fffb0; color: #f2fff8; }
+
+/* Loading screen between chambers */
+#loading {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #02040a;
+  color: var(--ink);
+  font-size: 20px;
+  letter-spacing: 4px;
+  text-align: center;
+  text-shadow: 0 0 12px rgba(120, 255, 176, 0.4);
+  z-index: 12;
+}
+#loading.show { display: flex; }
+
 /* Win banner */
 #banner {
   position: absolute;

@@ -118,7 +118,14 @@ export class WeightedCube {
       this._tmp.set(0, 0, -1).applyQuaternion(camera.quaternion);
       this.position.copy(camera.position).addScaledVector(this._tmp, CARRY_DIST);
       this.position.y -= 0.4;
+      // never let the held cube pass through a wall or into geometry: keep it
+      // inside the room, then push it out of any solids (it presses on surfaces)
+      const h = this.halfHeight, R = this.roomHalf;
+      this.position.x = Math.max(-R + h, Math.min(R - h, this.position.x));
+      this.position.z = Math.max(-R + h, Math.min(R - h, this.position.z));
+      this.position.y = Math.max(h, Math.min(this.wallHeight - h, this.position.y));
       this.velocity.set(0, 0, 0);
+      resolveBox(this.position, { x: h, y: h, z: h }, this.velocity, solids);
       this._prev = null;         // don't self-teleport while held
       this._sync();
       return;
