@@ -192,9 +192,29 @@ raised exit ledge reached via portals, exit pad + win banner, `R` to reset.
   the mouth to the nearest spot where the full oval fits, clear of obstacles
   (`portals.obstacles = chamber.solids`) and never overlapping the other portal.
 
-**Still open / possible next directions:**
-- More chambers / a chamber sequence + progression.
-- Recursive portal rendering (portal-in-portal) — ASCII hides most of the hard.
-- The asciify-style on-screen resolution slider (still in backlog).
-- GLSL ASCII shader if the CPU pass ever bottlenecks.
-- Author had a list of feedback items in progress — continue through it.
+**Max avatar + level system + gun pickup DONE (needs playtest tuning).**
+- `js/avatar.js` — "Max", Aperture test-subject body on render LAYER 1: hidden
+  from the main camera, rendered by the portals' virtual cameras
+  (`vcam.layers.enable(1)`), so you see yourself (holding cube/gun) through a
+  portal, not a floating cube. Positioned at the camera each frame.
+- `js/levels.js` — data-driven `Level` (platforms, weighted buttons, doors
+  [latch or `latch:false` held], gun pedestal, gated exit) + `LEVELS`. main.js
+  runs `loadLevel`/`advanceLevel` with a loading screen; `hasGun` gates firing;
+  `portals.active` off until pickup. chamber.js retired.
+  - Level 1 "CHAMBER 00": no gun; cube on pad opens a HELD door (re-closes if the
+    cube leaves) → walk into pedestal gun to acquire → exit unlocks → advance.
+  - Level 2 "CHAMBER 01": the previous chamber.
+- Held cube now collides with walls/solids (no more clipping through walls).
+- Un-asciify debug toggle: `U` or the top-right button → raw 3D render.
+
+**Next: Level 3 (design together)** — concepts on the table: "The Fling" (a pit
+that needs a floor→wall momentum fling), "Companion Relay" (portal the cube to a
+button you can't reach, then re-portal for yourself), "Two-Story" (portal + cube-
+stack to a high exit). Goal is 10 levels eventually; build interesting ones.
+
+**Known bug (still open):** player can be shoved ~0.6 behind the flush back-ledge
+(out-of-map "LOOK WHAT YOU'VE DONE" message fires + self-clears). Repro: exiting a
+portal near the back wall, worse at an angle from a floor portal.
+
+**Backlog:** recursive portals; asciify-style resolution slider; GLSL ASCII shader
+if the CPU pass bottlenecks; avatar/held-cube pose tuning.
