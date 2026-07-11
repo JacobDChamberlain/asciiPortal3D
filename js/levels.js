@@ -33,8 +33,28 @@ export const LEVELS = [
     buttons: [{ id: 'P', x: -8, z: 0, hw: 1.6, hz: 1.6, top: 0.5 }],
     doors: [],
     pedestal: null,
-    exit: { x: 0, y: 5.5, z: 13.3, hw: 2.5, hh: 1.6, hd: 2, gate: { type: 'button', button: 'P' } },
+    exit: { x: 0, y: 6.6, z: 13.3, hw: 2.5, hh: 1.6, hd: 2, gate: { type: 'button', button: 'P' } },  // sill at the ledge top (y=5), not sunk into it
     hint: 'Weigh the pad with the cube, then portal up to the exit ledge.',
+  },
+  {
+    name: 'CHAMBER 02 — THE FLING',
+    spawn: [-9, 15, -12],        // on the corner start ledge (top y=12), flush to the back & left walls
+    cube: [-6, 13.5, -12],       // sits on the ledge — carry it onto the pad
+    platforms: [
+      // start ledge: flush to the back (-Z) AND left (-X) walls, so there is NO
+      // gap behind you to fall into when you fling off the back wall. Tall, so
+      // the drop into a floor portal builds real speed for the fling.
+      { x: -9, y: 6, z: -12, hw: 6, hh: 6, hd: 3 },      // top y=12
+      // full-width barrier you cannot walk or jump over — you must fling across it
+      { x: 0, y: 2.5, z: -3, hw: 15, hh: 2.5, hd: 0.4 }, // top y=5
+      // exit platform beyond the barrier
+      { x: 0, y: 1, z: 8, hw: 5, hh: 1, hd: 3 },          // top y=2
+    ],
+    buttons: [{ id: 'F', x: -12, z: -11, hw: 1.6, hz: 1.6, top: 0.5, y: 12 }],  // pad ON the start ledge
+    doors: [],
+    pedestal: null,
+    exit: { x: 0, y: 3.6, z: 8, hw: 2.5, hh: 1.5, hd: 2.5, gate: { type: 'button', button: 'F' } },
+    hint: 'Set the cube on the ledge pad to unlock the exit. Then portal the floor + high on the back wall, drop in, and FLING over the barrier.',
   },
 ];
 
@@ -96,17 +116,18 @@ export class Level {
 
   _buildButtons() {
     this.buttons = this.def.buttons.map((b) => {
+      const by = b.y ?? 0;   // base elevation (0 = floor; >0 sits on a platform/ledge)
       const base = new THREE.Mesh(new THREE.BoxGeometry(b.hw * 2, b.top, b.hz * 2), MAT.buttonBase());
-      base.position.set(b.x, b.top / 2, b.z);
+      base.position.set(b.x, by + b.top / 2, b.z);
       this.root.add(base);
       const top = new THREE.Mesh(
         new THREE.PlaneGeometry(b.hw * 1.7, b.hz * 1.7),
         new THREE.MeshBasicMaterial({ color: 0xff5a4a })
       );
       top.rotation.x = -Math.PI / 2;
-      top.position.set(b.x, b.top + 0.01, b.z);
+      top.position.set(b.x, by + b.top + 0.01, b.z);
       this.root.add(top);
-      this.solids.push(makeBox(b.x, b.top / 2, b.z, b.hw, b.top / 2, b.hz));
+      this.solids.push(makeBox(b.x, by + b.top / 2, b.z, b.hw, b.top / 2, b.hz));
       this.pressed[b.id] = false;
       return { ...b, topMesh: top };
     });
@@ -157,14 +178,16 @@ export class Level {
   }
 
   _pressed(b, camera, cube, eyeHeight) {
+    const by = b.y ?? 0;   // account for buttons that sit on a raised ledge
     if (cube && !cube.carried &&
         Math.abs(cube.position.x - b.x) <= b.hw &&
         Math.abs(cube.position.z - b.z) <= b.hz &&
-        (cube.position.y - cube.halfHeight) <= b.top + 0.4) return true;
+        (cube.position.y - cube.halfHeight) <= by + b.top + 0.4 &&
+        (cube.position.y - cube.halfHeight) >= by - 0.6) return true;
     const feet = camera.position.y - eyeHeight;
     return Math.abs(camera.position.x - b.x) <= b.hw &&
            Math.abs(camera.position.z - b.z) <= b.hz &&
-           feet <= b.top + 0.5;
+           feet <= by + b.top + 0.5 && feet >= by - 0.6;
   }
 
   _setDoor(d, open) {

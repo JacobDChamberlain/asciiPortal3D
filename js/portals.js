@@ -116,6 +116,7 @@ class Portal {
     this.dest = null;   // set by PortalSystem.link
     this.T = new THREE.Matrix4();     // this -> dest transform
     this.quatT = new THREE.Quaternion();
+    this.placed = false;              // has the player actually fired this one?
   }
 
   // Place the portal flat on a surface: mouth centered at `center`, facing
@@ -219,6 +220,7 @@ export class PortalSystem {
     // is genuinely no room on this surface, the shot is dropped.
     if (!this._fitCenter(c, normal, p)) return false;
     p.setPose(c, normal.clone().normalize());
+    p.placed = true;                 // the player has now actually fired this one
     this.relink();
     return true;
   }
@@ -250,7 +252,7 @@ export class PortalSystem {
       }
     }
     const other = this.portals.find((x) => x !== p);
-    if (other && Math.abs(other.normal[nAxis]) > 0.5 &&
+    if (other && other.placed && Math.abs(other.normal[nAxis]) > 0.5 &&
         Math.abs(other.center[nAxis] - wallCoord) < 0.5) {
       forb.push({
         uMin: other.center[uAxis] - 2 * hw, uMax: other.center[uAxis] + 2 * hw,
@@ -295,7 +297,7 @@ export class PortalSystem {
   // True if the player is standing over a floor-portal opening (so the floor
   // collision should let them drop through instead of catching them).
   overFloorOpening(pos) {
-    if (!this.active) return false;
+    if (!this.active || !this._bothPlaced()) return false;
     for (const p of this.portals) {
       if (p.normal.y > 0.5 && this._inOpening(p, pos, 0.1)) return true;
     }
@@ -310,9 +312,19 @@ export class PortalSystem {
     for (const p of this.portals) p.group.visible = v;
   }
 
+  // Both portals fired? Until then the pair is inert (no see-through, no teleport).
+  _bothPlaced() {
+    return this.portals.length === 2 && this.portals[0].placed && this.portals[1].placed;
+  }
+
   // Render each portal's through-view into its target from a virtual camera.
   update(cam) {
-    if (!this.active || this.portals.length < 2) { this._setGroupsVisible(false); return; }
+    if (!this.active || !this._bothPlaced()) {
+      // A lone (or unfired) portal has no destination to show: draw just its
+      // inert ring if it's been fired, and never a see-through surface.
+      for (const p of this.portals) { p.group.visible = p.placed; p.display.visible = false; }
+      return;
+    }
     this._setGroupsVisible(false);
     const prevPlanes = this.renderer.clippingPlanes;
     for (const p of this.portals) {
@@ -334,13 +346,13 @@ export class PortalSystem {
     }
     this.renderer.setRenderTarget(null);
     this.renderer.clippingPlanes = prevPlanes;
-    this._setGroupsVisible(true);
+    for (const p of this.portals) { p.group.visible = true; p.display.visible = true; }
   }
 
   // Called after movement each frame. Teleports the camera if it crossed a
   // portal plane inside the opening; keeps velocity/orientation consistent.
   postMove(cam, velocity, dt) {
-    if (!this.active) return;
+    if (!this.active || !this._bothPlaced()) return;
     if (this.cooldown > 0) this.cooldown -= dt;
     const now = cam.position;
     if (!this.prev) { this.prev = now.clone(); return; }
@@ -390,7 +402,7 @@ export class PortalSystem {
   // floor/ceiling), clearance (exit nudge), and mutable _prev / _cool fields.
   // Returns true if it teleported this call.
   teleportObject(body, dt) {
-    if (!this.active) return false;
+    if (!this.active || !this._bothPlaced()) return false;
     if (body._cool > 0) body._cool -= dt;
     const now = body.position;
     if (!body._prev) { body._prev = now.clone(); return false; }
@@ -430,7 +442,7 @@ export class PortalSystem {
     const inset = this.roomHalf - 0.5;
     let minX = -inset, maxX = inset, minZ = -inset, maxZ = inset;
     const OPEN = this.roomHalf + 1;
-    if (this.active) {
+    if (this.active && this._bothPlaced()) {
       for (const p of this.portals) {
         const n = p.normal;
         if (Math.abs(n.y) > 0.5) continue;          // floor/ceiling: no wall gap

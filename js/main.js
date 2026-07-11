@@ -84,7 +84,7 @@ scene.add(ledgeLight);
  * The room  (walls, floor, ceiling — the shell the chamber sits inside)
  * ------------------------------------------------------------------ */
 const ROOM = 30;          // interior side length
-const WALL_H = 14;
+const WALL_H = 18;        // taller room gives the fling chamber vertical headroom
 const HALF = ROOM / 2;
 
 // walls the portal gun can shoot onto (populated by makeRoom)
@@ -202,6 +202,8 @@ function grantGun() {
 function resetPortals() {
   portals.portals[0].setPose(new THREE.Vector3(-HALF, EYE_HEIGHT, -3), new THREE.Vector3(1, 0, 0));
   portals.portals[1].setPose(new THREE.Vector3(3, EYE_HEIGHT, -HALF), new THREE.Vector3(0, 0, 1));
+  portals.portals[0].placed = false;   // hidden until the player fires them
+  portals.portals[1].placed = false;
   portals.relink();
   portals.prev = null;
 }
